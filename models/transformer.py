@@ -17,7 +17,8 @@ class StyleTransformer(nn.Module):
         self.max_length = config.max_length
         self.eos_idx = vocab.stoi['<eos>']
         self.pad_idx = vocab.stoi['<pad>']
-        self.style_embed = Embedding(num_styles, d_model)
+        self.num_styles = num_styles
+        self.style_embed = StyleEmbed(num_styles, d_model)
         self.embed = EmbeddingLayer(
             vocab, d_model, max_length,
             self.pad_idx,
@@ -45,6 +46,8 @@ class StyleTransformer(nn.Module):
         tgt_mask = torch.ones((self.max_length, self.max_length)).to(src_mask.device)
         tgt_mask = (tgt_mask.tril() == 0).view(1, 1, self.max_length, self.max_length)
 
+        style = F.one_hot(style, num_classes = self.num_styles).float()
+        #TODO: change the one_hot function here
         style_emb = self.style_embed(style).unsqueeze(1)
 
         enc_input = torch.cat((style_emb, self.embed(inp_tokens, pos_idx[:, :max_enc_len])), 1)
@@ -89,7 +92,21 @@ class StyleTransformer(nn.Module):
             
             
         return log_probs
-    
+
+class StyleEmbed(nn.Module):
+    def __init__(self, num_styles, d_model):
+        super(StyleEmbed, self).__init__()
+        self.layers = nn.ModuleList([nn.Linear(num_styles, d_model),
+                                     nn.Linear(d_model, d_model),
+                                     nn.Linear(d_model, d_model)])
+
+    def forward(self, x):
+        for layer in self.layers:
+            x = F.leaky_relu(layer(x))
+
+        return x
+
+
 class Discriminator(nn.Module):
     def __init__(self, config, vocab):
         super(Discriminator, self).__init__()
