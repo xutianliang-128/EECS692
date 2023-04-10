@@ -5,7 +5,8 @@ import numpy as np
 from torch import nn, optim
 #from tensorboardX import SummaryWriter
 from torch.nn.utils import clip_grad_norm_
-
+import torch.nn.functional as F
+from einops import rearrange, repeat
 from evaluator import Evaluator
 from utils import tensor2text, calc_ppl, idx2onehot, add_noise, word_drop
 
@@ -109,6 +110,9 @@ def d_step(config, vocab, model_F, model_D, optimizer_D, batch, temperature):
     
     adv_log_probs = torch.cat((gold_log_probs, gen_log_probs), 0)
     adv_labels = torch.cat((gold_labels, gen_labels), 0)
+    print(adv_log_probs)
+    print("************")
+    print(adv_labels)
     adv_loss = loss_fn(adv_log_probs, adv_labels)
     assert len(adv_loss.size()) == 1
     adv_loss = adv_loss.sum() / batch_size
@@ -149,6 +153,10 @@ def f_step(config, vocab, model_F, model_D, optimizer_F, batch, temperature, dro
         vocab
     )
     noise_inp_lengths = get_lengths(noise_inp_tokens, eos_idx)
+
+#########################################
+    raw_styles = F.one_hot(raw_styles, num_classes=config.num_styles).float()
+    rev_styles = F.one_hot(rev_styles, num_classes=config.num_styles).float()
 
     slf_log_probs = model_F(
         noise_inp_tokens, 
@@ -222,6 +230,102 @@ def f_step(config, vocab, model_F, model_D, optimizer_F, batch, temperature, dro
 
     return slf_rec_loss.item(), cyc_rec_loss.item(), adv_loss.item()
 
+####################################################################
+def dual_contrastive_loss(real_logits, fake_logits):
+    device = real_logits.device
+    real_logits, fake_logits = map(lambda t: rearrange(t, '... -> (...)'), (real_logits, fake_logits))
+
+    def loss_half(t1, t2):
+        t1 = rearrange(t1, 'i -> i ()')
+        t2 = repeat(t2, 'j -> i j', i=t1.shape[0])
+        t = torch.cat((t1, t2), dim=-1)
+        return F.cross_entropy(t, torch.zeros(t1.shape[0], device=device, dtype=torch.long))
+
+    return loss_half(real_logits, fake_logits) + loss_half(-fake_logits, -real_logits)
+
+
+def d_step_new(config, vocab, model_F, model_D, optimizer_D, batch, temperature, true_label=False):
+    model_F.eval()
+    pad_idx = vocab.stoi['<pad>']
+    eos_idx = vocab.stoi['<eos>']
+    vocab_size = len(vocab)
+    loss_fn = nn.NLLLoss(reduction='none')
+
+    inp_tokens, inp_lengths, raw_styles = batch_preprocess(batch, pad_idx, eos_idx)
+    rev_styles = 1 - raw_styles
+    batch_size = inp_tokens.size(0)
+
+    raw_gold_log_probs = model_D(inp_tokens, inp_lengths)
+
+    if true_label:
+        #raw_styles = F.one_hot(raw_styles, num_classes=config.num_styles).float()
+        divergence = loss_fn(raw_gold_log_probs, raw_styles)
+
+        loss = divergence.sum() / batch_size
+        # loss = divergence
+
+        optimizer_D.zero_grad()
+        loss.backward()
+        clip_grad_norm_(model_D.parameters(), 5)
+        optimizer_D.step()
+
+        model_F.train()
+        return loss.item()
+
+
+    with torch.no_grad():
+        raw_gen_log_probs = model_F(
+            inp_tokens,
+            None,
+            inp_lengths,
+            raw_gold_log_probs,
+            generate=True,
+            differentiable_decode=True,
+            temperature=temperature,
+        )
+
+    raw_gen_soft_tokens = raw_gen_log_probs.exp()
+    raw_gen_lengths = get_lengths(raw_gen_soft_tokens.argmax(-1), eos_idx)
+
+
+
+
+    if config.discriminator_method == 'Multi':
+        # gold_log_probs = model_D(inp_tokens, inp_lengths)
+        # gold_labels = raw_styles + 1
+        #
+        # raw_gen_log_probs = model_D(raw_gen_soft_tokens, raw_gen_lengths)
+        # rev_gen_log_probs = model_D(rev_gen_soft_tokens, rev_gen_lengths)
+        # gen_log_probs = torch.cat((raw_gen_log_probs, rev_gen_log_probs), 0)
+        # raw_gen_labels = raw_styles + 1
+        # rev_gen_labels = torch.zeros_like(rev_styles)
+        # gen_labels = torch.cat((raw_gen_labels, rev_gen_labels), 0)
+        pass
+    else:
+        # raw_gold_log_probs = model_D(inp_tokens, inp_lengths, raw_styles)
+        # rev_gold_log_probs = model_D(inp_tokens, inp_lengths, rev_styles)
+        # gold_log_probs = torch.cat((raw_gold_log_probs, rev_gold_log_probs), 0)
+        # raw_gold_labels = torch.ones_like(raw_styles)
+        # rev_gold_labels = torch.zeros_like(rev_styles)
+        # gold_labels = torch.cat((raw_gold_labels, rev_gold_labels), 0)
+
+        raw_gen_log_probs = model_D(raw_gen_soft_tokens.clone().detach(), raw_gen_lengths)
+    divergence = dual_contrastive_loss(raw_gold_log_probs, raw_gen_log_probs)
+
+    loss = divergence.sum() / batch_size
+    #loss = divergence
+
+    optimizer_D.zero_grad()
+    loss.backward()
+    clip_grad_norm_(model_D.parameters(), 5)
+    optimizer_D.step()
+
+    model_F.train()
+
+    return loss.item()
+####################################################################
+
+
 def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
     optimizer_F = optim.Adam(model_F.parameters(), lr=config.lr_F, weight_decay=config.L2)
     optimizer_D = optim.Adam(model_D.parameters(), lr=config.lr_D, weight_decay=config.L2)
@@ -230,6 +334,8 @@ def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
     his_f_slf_loss = []
     his_f_cyc_loss = []
     his_f_adv_loss = []
+
+    pre_dis_loss = []
     
     #writer = SummaryWriter(config.log_dir)
     global_step = 0
@@ -256,6 +362,20 @@ def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
             his_f_cyc_loss = []
             print('[iter: {}] slf_loss:{:.4f}, rec_loss:{:.4f}'.format(i + 1, avrg_f_slf_loss, avrg_f_cyc_loss))
 
+    print('Classifier pretraining......')
+    for i, batch in enumerate(train_iters):
+        if i >= config.F_pretrain_iter:
+            break
+        temperature = 1
+        d_adv_loss = d_step_new(
+            config, vocab, model_F, model_D, optimizer_D, batch, temperature, true_label=True
+        )
+        pre_dis_loss.append(d_adv_loss)
+
+        if (i + 1) % 10 == 0:
+            avrg_pre_dis_loss = np.mean(pre_dis_loss)
+            pre_dis_loss = []
+            print('[iter: {}] avrg_pre_dis_loss:{:.4f}'.format(i + 1, avrg_pre_dis_loss))
     
     print('Training start......')
 
@@ -275,22 +395,22 @@ def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
         drop_decay = calc_temperature(config.drop_rate_config, global_step)
         temperature = calc_temperature(config.temperature_config, global_step)
         batch = next(batch_iters)
-        
-        for _ in range(config.iter_D):
-            batch = next(batch_iters)
-            d_adv_loss = d_step(
-                config, vocab, model_F, model_D, optimizer_D, batch, temperature
-            )
-            his_d_adv_loss.append(d_adv_loss)
-            
+
         for _ in range(config.iter_F):
             batch = next(batch_iters)
             f_slf_loss, f_cyc_loss, f_adv_loss = f_step(
-                config, vocab, model_F, model_D, optimizer_F, batch, temperature, drop_decay
+                config, vocab, model_F, model_D, optimizer_F, batch, temperature, drop_decay, False
             )
             his_f_slf_loss.append(f_slf_loss)
             his_f_cyc_loss.append(f_cyc_loss)
             his_f_adv_loss.append(f_adv_loss)
+        
+        for _ in range(config.iter_D):
+            batch = next(batch_iters)
+            d_adv_loss = d_step_new(
+                config, vocab, model_F, model_D, optimizer_D, batch, temperature
+            )
+            his_d_adv_loss.append(d_adv_loss)
             
         
         global_step += 1

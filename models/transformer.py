@@ -46,8 +46,7 @@ class StyleTransformer(nn.Module):
         tgt_mask = torch.ones((self.max_length, self.max_length)).to(src_mask.device)
         tgt_mask = (tgt_mask.tril() == 0).view(1, 1, self.max_length, self.max_length)
 
-        style = F.one_hot(style, num_classes = self.num_styles).float()
-        #TODO: change the one_hot function here
+
         style_emb = self.style_embed(style).unsqueeze(1)
 
         enc_input = torch.cat((style_emb, self.embed(inp_tokens, pos_idx[:, :max_enc_len])), 1)
