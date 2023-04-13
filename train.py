@@ -230,7 +230,56 @@ def f_step(config, vocab, model_F, model_D, optimizer_F, batch, temperature, dro
 
     return slf_rec_loss.item(), cyc_rec_loss.item(), adv_loss.item()
 
+
+def conbine_step(config, vocab, model_F, model_D, optimizer_F, optimizer_D, batch, temperature):
+    pad_idx = vocab.stoi['<pad>']
+    eos_idx = vocab.stoi['<eos>']
+    vocab_size = len(vocab)
+    loss_fn = nn.NLLLoss(reduction='none')
+
+    inp_tokens, inp_lengths, raw_styles = batch_preprocess(batch, pad_idx, eos_idx)
+    rev_styles = 1 - raw_styles
+    batch_size = inp_tokens.size(0)
+
+    raw_gold_log_probs = model_D(inp_tokens, inp_lengths)
+
+    raw_gen_log_probs = model_F(
+        inp_tokens,
+        None,
+        inp_lengths,
+        raw_gold_log_probs.detach(),
+        generate=True,
+        differentiable_decode=True,
+        temperature=temperature,
+    )
+
+    raw_gen_soft_tokens = raw_gen_log_probs.exp().detach()
+    raw_gen_lengths = get_lengths(raw_gen_soft_tokens.argmax(-1), eos_idx)
+
+    raw_gen_dis_probs = model_D(raw_gen_soft_tokens.clone().detach(), raw_gen_lengths)
+    divergence = dual_contrastive_loss(raw_gold_log_probs, raw_gen_dis_probs)
+
+    loss = divergence.sum() / batch_size
+
+    slf_rec_loss = loss_fn(raw_gen_log_probs.transpose(1, 2), inp_tokens)
+    slf_rec_loss = slf_rec_loss.sum() / batch_size
+    slf_rec_loss *= config.slf_factor
+
+    optimizer_F.zero_grad()
+    slf_rec_loss.backward()
+    optimizer_F.step()
+    model_D.train()
+
+    optimizer_D.zero_grad()
+    loss.backward()
+    clip_grad_norm_(model_D.parameters(), 5)
+    optimizer_D.step()
+
+    return slf_rec_loss.item(), loss.item(), 0
+
 ####################################################################
+
+
 def dual_contrastive_loss(real_logits, fake_logits):
     device = real_logits.device
     real_logits, fake_logits = map(lambda t: rearrange(t, '... -> (...)'), (real_logits, fake_logits))
@@ -294,28 +343,7 @@ def d_step_new(config, vocab, model_F, model_D, optimizer_D, batch, temperature,
     raw_gen_lengths = get_lengths(raw_gen_soft_tokens.argmax(-1), eos_idx)
 
 
-
-
-    if config.discriminator_method == 'Multi':
-        # gold_log_probs = model_D(inp_tokens, inp_lengths)
-        # gold_labels = raw_styles + 1
-        #
-        # raw_gen_log_probs = model_D(raw_gen_soft_tokens, raw_gen_lengths)
-        # rev_gen_log_probs = model_D(rev_gen_soft_tokens, rev_gen_lengths)
-        # gen_log_probs = torch.cat((raw_gen_log_probs, rev_gen_log_probs), 0)
-        # raw_gen_labels = raw_styles + 1
-        # rev_gen_labels = torch.zeros_like(rev_styles)
-        # gen_labels = torch.cat((raw_gen_labels, rev_gen_labels), 0)
-        pass
-    else:
-        # raw_gold_log_probs = model_D(inp_tokens, inp_lengths, raw_styles)
-        # rev_gold_log_probs = model_D(inp_tokens, inp_lengths, rev_styles)
-        # gold_log_probs = torch.cat((raw_gold_log_probs, rev_gold_log_probs), 0)
-        # raw_gold_labels = torch.ones_like(raw_styles)
-        # rev_gold_labels = torch.zeros_like(rev_styles)
-        # gold_labels = torch.cat((raw_gold_labels, rev_gold_labels), 0)
-
-        raw_gen_log_probs = model_D(raw_gen_soft_tokens.clone().detach(), raw_gen_lengths)
+    raw_gen_log_probs = model_D(raw_gen_soft_tokens.clone().detach(), raw_gen_lengths)
     divergence = dual_contrastive_loss(raw_gold_log_probs, raw_gen_log_probs)
 
     loss = divergence.sum() / batch_size
@@ -397,59 +425,101 @@ def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
                 temperature = (1 - k) * t_a + k * t_b
                 return temperature
     batch_iters = iter(train_iters)
+    ###########################################
     while True:
         drop_decay = calc_temperature(config.drop_rate_config, global_step)
         temperature = calc_temperature(config.temperature_config, global_step)
         batch = next(batch_iters)
 
-        for _ in range(config.iter_F):
-            batch = next(batch_iters)
-            f_slf_loss, f_cyc_loss, f_adv_loss = f_step(
-                config, vocab, model_F, model_D, optimizer_F, batch, temperature, drop_decay, False
-            )
-            his_f_slf_loss.append(f_slf_loss)
-            his_f_cyc_loss.append(f_cyc_loss)
-            his_f_adv_loss.append(f_adv_loss)
-        
-        for _ in range(config.iter_D):
-            batch = next(batch_iters)
-            d_adv_loss = d_step_new(
-                config, vocab, model_F, model_D, optimizer_D, batch, temperature
-            )
-            his_d_adv_loss.append(d_adv_loss)
-            
-        
+
+        f_slf_loss, d_loss, f_adv_loss = conbine_step(
+            config, vocab, model_F, model_D, optimizer_F, optimizer_D, batch, temperature)
+        his_f_slf_loss.append(f_slf_loss)
+        his_f_cyc_loss.append(d_loss)
+        his_f_adv_loss.append(f_adv_loss)
+
         global_step += 1
-        #writer.add_scalar('rec_loss', rec_loss.item(), global_step)
-        #writer.add_scalar('loss', loss.item(), global_step)
-            
-            
+
         if global_step % config.log_steps == 0:
-            avrg_d_adv_loss = np.mean(his_d_adv_loss)
             avrg_f_slf_loss = np.mean(his_f_slf_loss)
             avrg_f_cyc_loss = np.mean(his_f_cyc_loss)
             avrg_f_adv_loss = np.mean(his_f_adv_loss)
-            log_str = '[iter {}] d_adv_loss: {:.4f}  ' + \
-                      'f_slf_loss: {:.4f}  f_cyc_loss: {:.4f}  ' + \
+            log_str = '[iter {}] ' + \
+                      'f_slf_loss: {:.4f}  f_d_loss: {:.4f}  ' + \
                       'f_adv_loss: {:.4f}  temp: {:.4f}  drop: {:.4f}'
             print(log_str.format(
-                global_step, avrg_d_adv_loss,
+                global_step,
                 avrg_f_slf_loss, avrg_f_cyc_loss, avrg_f_adv_loss,
                 temperature, config.inp_drop_prob * drop_decay
             ))
-                
+
         if global_step % config.eval_steps == 0:
-            his_d_adv_loss = []
             his_f_slf_loss = []
             his_f_cyc_loss = []
             his_f_adv_loss = []
-            
-            #save model
+
+            # save model
             torch.save(model_F.state_dict(), config.save_folder + '/ckpts/' + str(global_step) + '_F.pth')
             torch.save(model_D.state_dict(), config.save_folder + '/ckpts/' + str(global_step) + '_D.pth')
             auto_eval(config, vocab, model_F, test_iters, global_step, temperature)
-            #for path, sub_writer in writer.all_writers.items():
+            # for path, sub_writer in writer.all_writers.items():
             #    sub_writer.flush()
+
+    ###########################################
+
+    # while True:
+    #     drop_decay = calc_temperature(config.drop_rate_config, global_step)
+    #     temperature = calc_temperature(config.temperature_config, global_step)
+    #     batch = next(batch_iters)
+    #
+    #     for _ in range(config.iter_F):
+    #         batch = next(batch_iters)
+    #         f_slf_loss, f_cyc_loss, f_adv_loss = f_step(
+    #             config, vocab, model_F, model_D, optimizer_F, batch, temperature, drop_decay, False
+    #         )
+    #         his_f_slf_loss.append(f_slf_loss)
+    #         his_f_cyc_loss.append(f_cyc_loss)
+    #         his_f_adv_loss.append(f_adv_loss)
+    #
+    #     for _ in range(config.iter_D):
+    #         batch = next(batch_iters)
+    #         d_adv_loss = d_step_new(
+    #             config, vocab, model_F, model_D, optimizer_D, batch, temperature
+    #         )
+    #         his_d_adv_loss.append(d_adv_loss)
+    #
+    #
+    #     global_step += 1
+    #     #writer.add_scalar('rec_loss', rec_loss.item(), global_step)
+    #     #writer.add_scalar('loss', loss.item(), global_step)
+    #
+    #
+    #     if global_step % config.log_steps == 0:
+    #         avrg_d_adv_loss = np.mean(his_d_adv_loss)
+    #         avrg_f_slf_loss = np.mean(his_f_slf_loss)
+    #         avrg_f_cyc_loss = np.mean(his_f_cyc_loss)
+    #         avrg_f_adv_loss = np.mean(his_f_adv_loss)
+    #         log_str = '[iter {}] d_adv_loss: {:.4f}  ' + \
+    #                   'f_slf_loss: {:.4f}  f_cyc_loss: {:.4f}  ' + \
+    #                   'f_adv_loss: {:.4f}  temp: {:.4f}  drop: {:.4f}'
+    #         print(log_str.format(
+    #             global_step, avrg_d_adv_loss,
+    #             avrg_f_slf_loss, avrg_f_cyc_loss, avrg_f_adv_loss,
+    #             temperature, config.inp_drop_prob * drop_decay
+    #         ))
+    #
+    #     if global_step % config.eval_steps == 0:
+    #         his_d_adv_loss = []
+    #         his_f_slf_loss = []
+    #         his_f_cyc_loss = []
+    #         his_f_adv_loss = []
+    #
+    #         #save model
+    #         torch.save(model_F.state_dict(), config.save_folder + '/ckpts/' + str(global_step) + '_F.pth')
+    #         torch.save(model_D.state_dict(), config.save_folder + '/ckpts/' + str(global_step) + '_D.pth')
+    #         auto_eval(config, vocab, model_F, test_iters, global_step, temperature)
+    #         #for path, sub_writer in writer.all_writers.items():
+    #         #    sub_writer.flush()
 
 def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
     model_F.eval()
