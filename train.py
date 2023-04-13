@@ -535,6 +535,9 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
             inp_lengths = get_lengths(inp_tokens, eos_idx)
             raw_styles = torch.full_like(inp_tokens[:, 0], raw_style)
             rev_styles = 1 - raw_styles
+
+            raw_styles = F.one_hot(raw_styles, num_classes=config.num_styles).float()
+            rev_styles = F.one_hot(rev_styles, num_classes=config.num_styles).float()
         
             with torch.no_grad():
                 raw_log_probs = model_F(
