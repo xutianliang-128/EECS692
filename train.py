@@ -243,6 +243,12 @@ def dual_contrastive_loss(real_logits, fake_logits):
 
     return loss_half(real_logits, fake_logits) + loss_half(-fake_logits, -real_logits)
 
+def d_logistic_loss(real_pred, fake_pred):
+    real_loss = F.softplus(-real_pred)
+    fake_loss = F.softplus(fake_pred)
+
+    return real_loss.mean() + fake_loss.mean()
+
 
 def d_step_new(config, vocab, model_F, model_D, optimizer_D, batch, temperature, true_label=False):
     model_F.eval()
