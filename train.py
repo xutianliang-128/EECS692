@@ -231,7 +231,7 @@ def f_step(config, vocab, model_F, model_D, optimizer_F, batch, temperature, dro
     return slf_rec_loss.item(), cyc_rec_loss.item(), adv_loss.item()
 
 
-def conbine_step(config, vocab, model_F, model_D, optimizer_F, optimizer_D, batch, temperature):
+def conbine_step(config, vocab, model_F, model_D, optimizer_F, optimizer_D, batch, temperature, drop_decay):
     pad_idx = vocab.stoi['<pad>']
     eos_idx = vocab.stoi['<eos>']
     vocab_size = len(vocab)
@@ -240,13 +240,21 @@ def conbine_step(config, vocab, model_F, model_D, optimizer_F, optimizer_D, batc
     inp_tokens, inp_lengths, raw_styles = batch_preprocess(batch, pad_idx, eos_idx)
     rev_styles = 1 - raw_styles
     batch_size = inp_tokens.size(0)
+    token_mask = (inp_tokens != pad_idx).float()
+    noise_inp_tokens = word_drop(
+        inp_tokens,
+        inp_lengths,
+        config.inp_drop_prob * drop_decay,
+        vocab
+    )
+    noise_inp_lengths = get_lengths(noise_inp_tokens, eos_idx)
 
     raw_gold_log_probs = model_D(inp_tokens, inp_lengths)
 
     raw_gen_log_probs = model_F(
-        inp_tokens,
+        noise_inp_tokens,
         None,
-        inp_lengths,
+        noise_inp_lengths,
         raw_gold_log_probs.detach(),
         generate=True,
         differentiable_decode=True,
@@ -261,7 +269,7 @@ def conbine_step(config, vocab, model_F, model_D, optimizer_F, optimizer_D, batc
 
     loss = divergence.sum() / batch_size
 
-    slf_rec_loss = loss_fn(raw_gen_log_probs.transpose(1, 2), inp_tokens)
+    slf_rec_loss = loss_fn(raw_gen_log_probs.transpose(1, 2), inp_tokens) * token_mask
     slf_rec_loss = slf_rec_loss.sum() / batch_size
     slf_rec_loss *= config.slf_factor
 
@@ -433,7 +441,7 @@ def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
 
 
         f_slf_loss, d_loss, f_adv_loss = conbine_step(
-            config, vocab, model_F, model_D, optimizer_F, optimizer_D, batch, temperature)
+            config, vocab, model_F, model_D, optimizer_F, optimizer_D, batch, temperature, drop_decay)
         his_f_slf_loss.append(f_slf_loss)
         his_f_cyc_loss.append(d_loss)
         his_f_adv_loss.append(f_adv_loss)
@@ -577,12 +585,12 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
     ref_text = evaluator.yelp_ref
 
     
-    acc_neg = evaluator.yelp_acc_0(rev_output[0])
-    acc_pos = evaluator.yelp_acc_1(rev_output[1])
-    bleu_neg = evaluator.yelp_ref_bleu_0(rev_output[0])
-    bleu_pos = evaluator.yelp_ref_bleu_1(rev_output[1])
-    ppl_neg = evaluator.yelp_ppl(rev_output[0])
-    ppl_pos = evaluator.yelp_ppl(rev_output[1])
+    # acc_neg = evaluator.yelp_acc_0(rev_output[0])
+    # acc_pos = evaluator.yelp_acc_1(rev_output[1])
+    # bleu_neg = evaluator.yelp_ref_bleu_0(rev_output[0])
+    # bleu_pos = evaluator.yelp_ref_bleu_1(rev_output[1])
+    # ppl_neg = evaluator.yelp_ppl(rev_output[0])
+    # ppl_pos = evaluator.yelp_ppl(rev_output[1])
 
     for k in range(5):
         idx = np.random.randint(len(rev_output[0]))
@@ -605,45 +613,45 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
 
     print('*' * 20, '********', '*' * 20)
 
-    print(('[auto_eval] acc_pos: {:.4f} acc_neg: {:.4f} ' + \
-          'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
-          'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
-              acc_pos, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
-    ))
+    # print(('[auto_eval] acc_pos: {:.4f} acc_neg: {:.4f} ' + \
+    #       'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
+    #       'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
+    #           acc_pos, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
+    # ))
 
     
     # save output
-    save_file = config.save_folder + '/' + str(global_step) + '.txt'
-    eval_log_file = config.save_folder + '/eval_log.txt'
-    with open(eval_log_file, 'a') as fl:
-        print(('iter{:5d}:  acc_pos: {:.4f} acc_neg: {:.4f} ' + \
-               'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
-               'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
-            global_step, acc_pos, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
-        ), file=fl)
-    with open(save_file, 'w') as fw:
-        print(('[auto_eval] acc_pos: {:.4f} acc_neg: {:.4f} ' + \
-               'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
-               'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
-            acc_pos, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
-        ), file=fw)
-
-        for idx in range(len(rev_output[0])):
-            print('*' * 20, 'neg sample', '*' * 20, file=fw)
-            print('[gold]', gold_text[0][idx], file=fw)
-            print('[raw ]', raw_output[0][idx], file=fw)
-            print('[rev ]', rev_output[0][idx], file=fw)
-            print('[ref ]', ref_text[0][idx], file=fw)
-
-        print('*' * 20, '********', '*' * 20, file=fw)
-
-        for idx in range(len(rev_output[1])):
-            print('*' * 20, 'pos sample', '*' * 20, file=fw)
-            print('[gold]', gold_text[1][idx], file=fw)
-            print('[raw ]', raw_output[1][idx], file=fw)
-            print('[rev ]', rev_output[1][idx], file=fw)
-            print('[ref ]', ref_text[1][idx], file=fw)
-
-        print('*' * 20, '********', '*' * 20, file=fw)
+    # save_file = config.save_folder + '/' + str(global_step) + '.txt'
+    # eval_log_file = config.save_folder + '/eval_log.txt'
+    # with open(eval_log_file, 'a') as fl:
+    #     print(('iter{:5d}:  acc_pos: {:.4f} acc_neg: {:.4f} ' + \
+    #            'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
+    #            'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
+    #         global_step, acc_pos, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
+    #     ), file=fl)
+    # with open(save_file, 'w') as fw:
+    #     print(('[auto_eval] acc_pos: {:.4f} acc_neg: {:.4f} ' + \
+    #            'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
+    #            'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
+    #         acc_pos, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
+    #     ), file=fw)
+    #
+    #     for idx in range(len(rev_output[0])):
+    #         print('*' * 20, 'neg sample', '*' * 20, file=fw)
+    #         print('[gold]', gold_text[0][idx], file=fw)
+    #         print('[raw ]', raw_output[0][idx], file=fw)
+    #         print('[rev ]', rev_output[0][idx], file=fw)
+    #         print('[ref ]', ref_text[0][idx], file=fw)
+    #
+    #     print('*' * 20, '********', '*' * 20, file=fw)
+    #
+    #     for idx in range(len(rev_output[1])):
+    #         print('*' * 20, 'pos sample', '*' * 20, file=fw)
+    #         print('[gold]', gold_text[1][idx], file=fw)
+    #         print('[raw ]', raw_output[1][idx], file=fw)
+    #         print('[rev ]', rev_output[1][idx], file=fw)
+    #         print('[ref ]', ref_text[1][idx], file=fw)
+    #
+    #     print('*' * 20, '********', '*' * 20, file=fw)
         
     model_F.train()
