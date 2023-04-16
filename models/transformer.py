@@ -13,11 +13,12 @@ class StyleTransformer(nn.Module):
         h, dropout = config.h, config.dropout
         learned_pos_embed = config.learned_pos_embed
         load_pretrained_embed = config.load_pretrained_embed
-        
+
         self.max_length = config.max_length
         self.eos_idx = vocab.stoi['<eos>']
         self.pad_idx = vocab.stoi['<pad>']
-        self.style_embed = Embedding(num_styles, d_model)
+        self.num_styles = num_styles
+        self.style_embed = StyleEmbed(num_styles, d_model)
         self.embed = EmbeddingLayer(
             vocab, d_model, max_length,
             self.pad_idx,
@@ -27,7 +28,7 @@ class StyleTransformer(nn.Module):
         self.sos_token = nn.Parameter(torch.randn(d_model))
         self.encoder = Encoder(num_layers, d_model, len(vocab), h, dropout)
         self.decoder = Decoder(num_layers, d_model, len(vocab), h, dropout)
-        
+
     def forward(self, inp_tokens, gold_tokens, inp_lengths, style,
                 generate=False, differentiable_decode=False, temperature=1.0, override_style=None):
         batch_size = inp_tokens.size(0)
@@ -45,13 +46,13 @@ class StyleTransformer(nn.Module):
         tgt_mask = torch.ones((self.max_length, self.max_length)).to(src_mask.device)
         tgt_mask = (tgt_mask.tril() == 0).view(1, 1, self.max_length, self.max_length)
 
-        style_emb = self.style_embed(style).unsqueeze(1) if override_style is None else override_style
+        style_emb = self.style_embed(style).unsqueeze(1)
 
         enc_input = torch.cat((style_emb, self.embed(inp_tokens, pos_idx[:, :max_enc_len])), 1)
         memory = self.encoder(enc_input, src_mask)
-        
+
         sos_token = self.sos_token.view(1, 1, -1).expand(batch_size, -1, -1)
-        
+
         if not generate:
             dec_input = gold_tokens[:, :-1]
             max_dec_len = gold_tokens.size(1)
@@ -62,34 +63,46 @@ class StyleTransformer(nn.Module):
                 temperature
             )
         else:
-            
+
             log_probs = []
             next_token = sos_token
             prev_states = None
-            
+
             for k in range(self.max_length):
                 log_prob, prev_states = self.decoder.incremental_forward(
                     next_token, memory,
-                    src_mask, tgt_mask[:, :, k:k+1, :k+1],
+                    src_mask, tgt_mask[:, :, k:k + 1, :k + 1],
                     temperature,
                     prev_states
                 )
 
                 log_probs.append(log_prob)
-                
-                if differentiable_decode:
-                    next_token = self.embed(log_prob.exp(), pos_idx[:, k:k+1])
-                else:
-                    next_token = self.embed(log_prob.argmax(-1), pos_idx[:, k:k+1])
 
-                #if (pred_tokens == self.eos_idx).max(-1)[0].min(-1)[0].item() == 1:
+                if differentiable_decode:
+                    next_token = self.embed(log_prob.exp(), pos_idx[:, k:k + 1])
+                else:
+                    next_token = self.embed(log_prob.argmax(-1), pos_idx[:, k:k + 1])
+
+                # if (pred_tokens == self.eos_idx).max(-1)[0].min(-1)[0].item() == 1:
                 #    break
 
             log_probs = torch.cat(log_probs, 1)
-            
-            
+
         return log_probs
-    
+
+class StyleEmbed(nn.Module):
+    def __init__(self, num_styles, d_model):
+        super(StyleEmbed, self).__init__()
+        self.layers = nn.ModuleList([nn.Linear(num_styles, d_model),
+                                     nn.Linear(d_model, d_model),
+                                     nn.Linear(d_model, d_model)])
+
+    def forward(self, x):
+        for layer in self.layers:
+            x = F.leaky_relu(layer(x))
+
+        return x
+
 class Discriminator(nn.Module):
     def __init__(self, config, vocab):
         super(Discriminator, self).__init__()
