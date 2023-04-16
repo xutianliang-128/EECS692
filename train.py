@@ -18,13 +18,16 @@ def get_lengths(tokens, eos_idx):
 
 def batch_preprocess(batch, pad_idx, eos_idx, reverse=False):
     batch_pos, batch_neg = batch
-    diff = batch_pos.size(1) - batch_neg.size(1)
-    if diff < 0:
-        pad = torch.full_like(batch_neg[:, :-diff], pad_idx)
-        batch_pos = torch.cat((batch_pos, pad), 1)
-    elif diff > 0:
-        pad = torch.full_like(batch_pos[:, :diff], pad_idx)
-        batch_neg = torch.cat((batch_neg, pad), 1)
+    # diff = batch_pos.size(1) - batch_neg.size(1)
+    # if diff < 0:
+    #     pad = torch.full_like(batch_neg[:, :-diff], pad_idx)
+    #     batch_pos = torch.cat((batch_pos, pad), 1)
+    # elif diff > 0:
+    #     pad = torch.full_like(batch_pos[:, :diff], pad_idx)
+    #     batch_neg = torch.cat((batch_neg, pad), 1)
+
+    batch_pos = torch.nn.functional.pad(batch_pos, (0, 16 - batch_pos.shape[1]), value=pad_idx)
+    batch_neg = torch.nn.functional.pad(batch_neg, (0, 16 - batch_neg.shape[1]), value=pad_idx)
 
     pos_styles = torch.ones_like(batch_pos[:, 0])
     neg_styles = torch.zeros_like(batch_neg[:, 0])
@@ -585,12 +588,12 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
     ref_text = evaluator.yelp_ref
 
     
-    # acc_neg = evaluator.yelp_acc_0(rev_output[0])
-    # acc_pos = evaluator.yelp_acc_1(rev_output[1])
-    # bleu_neg = evaluator.yelp_ref_bleu_0(rev_output[0])
-    # bleu_pos = evaluator.yelp_ref_bleu_1(rev_output[1])
-    # ppl_neg = evaluator.yelp_ppl(rev_output[0])
-    # ppl_pos = evaluator.yelp_ppl(rev_output[1])
+    acc_neg = evaluator.yelp_acc_0(rev_output[0])
+    acc_pos = evaluator.yelp_acc_1(rev_output[1])
+    bleu_neg = evaluator.yelp_ref_bleu_0(rev_output[0])
+    bleu_pos = evaluator.yelp_ref_bleu_1(rev_output[1])
+    ppl_neg = evaluator.yelp_ppl(rev_output[0])
+    ppl_pos = evaluator.yelp_ppl(rev_output[1])
 
     for k in range(5):
         idx = np.random.randint(len(rev_output[0]))
@@ -613,11 +616,11 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
 
     print('*' * 20, '********', '*' * 20)
 
-    # print(('[auto_eval] acc_pos: {:.4f} acc_neg: {:.4f} ' + \
-    #       'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
-    #       'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
-    #           acc_pos, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
-    # ))
+    print(('[auto_eval] acc_pos: {:.4f} acc_neg: {:.4f} ' + \
+          'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
+          'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
+              acc_pos, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
+    ))
 
     
     # save output
