@@ -46,7 +46,11 @@ class StyleTransformer(nn.Module):
         tgt_mask = torch.ones((self.max_length, self.max_length)).to(src_mask.device)
         tgt_mask = (tgt_mask.tril() == 0).view(1, 1, self.max_length, self.max_length)
 
-        style_emb = self.style_embed(style).unsqueeze(1)
+        if override_style == None:
+            style_emb = self.style_embed(style).unsqueeze(1)
+        else:
+            style_emb = override_style
+            style_emb = torch.unsqueeze(style_emb, dim=0)
 
         enc_input = torch.cat((style_emb, self.embed(inp_tokens, pos_idx[:, :max_enc_len])), 1)
         memory = self.encoder(enc_input, src_mask)

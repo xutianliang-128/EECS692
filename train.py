@@ -7,7 +7,7 @@ from torch import nn, optim
 from torch.nn.utils import clip_grad_norm_
 import torch.nn.functional as F
 from evaluator import Evaluator
-from utils import tensor2text, calc_ppl, idx2onehot, add_noise, word_drop
+from utils import tensor2text, calc_ppl, idx2onehot, add_noise, word_drop, text2tensor
 
 def get_lengths(tokens, eos_idx):
     lengths = torch.cumsum(tokens == eos_idx, 1)
@@ -336,6 +336,25 @@ def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
             auto_eval(config, vocab, model_F, test_iters, global_step, temperature)
             #for path, sub_writer in writer.all_writers.items():
             #    sub_writer.flush()
+
+def custom_eval(config, vocab, model_F, input_text, input_style, temperature=1):
+    inp_tokens = text2tensor(vocab, input_text)
+    eos_idx = vocab.stoi['<eos>']
+    inp_lengths = get_lengths(inp_tokens.to(config.device), eos_idx)
+    with torch.no_grad():
+        raw_log_probs = model_F(
+            inp_tokens.to(config.device),
+            None,
+            inp_lengths,
+            input_style.to(config.device),
+            generate=True,
+            differentiable_decode=False,
+            temperature=temperature,
+            override_style=input_style.to(config.device)
+        )
+
+    output = tensor2text(vocab, raw_log_probs.argmax(-1).cpu())
+    return output
 
 def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
     model_F.eval()

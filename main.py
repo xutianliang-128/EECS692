@@ -2,7 +2,7 @@ import torch
 import time
 from data import load_dataset
 from models import StyleTransformer, Discriminator
-from train import train, auto_eval
+from train import train, auto_eval ,custom_eval
 
 
 class Config():
@@ -52,8 +52,12 @@ def main():
     model_F = StyleTransformer(config, vocab).to(config.device)
     model_D = Discriminator(config, vocab).to(config.device)
     print(config.discriminator_method)
-    
-    train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters)
+    ###################
+    print("Test custom eval.")
+    out = custom_eval(config, vocab, model_F, "I love You", input_style=torch.rand((1,256)), temperature=1)
+    print(out)
+    ##################
+    #train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters)
     
 
 if __name__ == '__main__':

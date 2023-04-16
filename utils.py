@@ -23,6 +23,20 @@ def tensor2text(vocab, tensor):
 
     return text
 
+
+def text2tensor(vocab, text):
+    #text = "I love You ."
+    text = text.lower()
+    text = text.split()
+    inp_tokens = [vocab.stoi[i] for i in text]
+    inp_tokens.append(vocab.stoi["<eos>"])
+    for i in range(len(inp_tokens), 16):
+        inp_tokens.append(vocab.stoi["<pad>"])
+    inp_tokens = torch.IntTensor([inp_tokens])
+    return inp_tokens
+    #return torch.unsqueeze(inp_tokens, dim=0)
+
+
 def calc_ppl(log_probs, tokens_mask):
     return (log_probs.sum() / tokens_mask.sum()).exp()
 
