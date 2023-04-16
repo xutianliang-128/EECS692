@@ -114,7 +114,7 @@ class Discriminator(nn.Module):
         num_classes = config.num_classes
         
         self.pad_idx = vocab.stoi['<pad>']
-        self.style_embed = Embedding(num_styles, d_model)
+        self.style_embed = StyleEmbed(num_styles, d_model)
         self.embed = EmbeddingLayer(
             vocab, d_model, max_length,
             self.pad_idx,

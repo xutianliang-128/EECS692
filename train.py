@@ -5,7 +5,7 @@ import numpy as np
 from torch import nn, optim
 #from tensorboardX import SummaryWriter
 from torch.nn.utils import clip_grad_norm_
-
+import torch.nn.functional as F
 from evaluator import Evaluator
 from utils import tensor2text, calc_ppl, idx2onehot, add_noise, word_drop
 
@@ -51,6 +51,11 @@ def d_step(config, vocab, model_F, model_D, optimizer_D, batch, temperature):
 
     inp_tokens, inp_lengths, raw_styles = batch_preprocess(batch, pad_idx, eos_idx)
     rev_styles = 1 - raw_styles
+
+#################################################################
+    raw_styles_ = F.one_hot(raw_styles, num_classes=config.num_styles).float()
+    rev_styles_ = F.one_hot(rev_styles, num_classes=config.num_styles).float()
+
     batch_size = inp_tokens.size(0)
 
     with torch.no_grad():
@@ -58,7 +63,7 @@ def d_step(config, vocab, model_F, model_D, optimizer_D, batch, temperature):
             inp_tokens, 
             None,
             inp_lengths,
-            raw_styles,
+            raw_styles_,
             generate=True,
             differentiable_decode=True,
             temperature=temperature,
@@ -67,7 +72,7 @@ def d_step(config, vocab, model_F, model_D, optimizer_D, batch, temperature):
             inp_tokens,
             None,
             inp_lengths,
-            rev_styles,
+            rev_styles_,
             generate=True,
             differentiable_decode=True,
             temperature=temperature,
@@ -94,16 +99,16 @@ def d_step(config, vocab, model_F, model_D, optimizer_D, batch, temperature):
         rev_gen_labels = torch.zeros_like(rev_styles)
         gen_labels = torch.cat((raw_gen_labels, rev_gen_labels), 0)
     else:
-        raw_gold_log_probs = model_D(inp_tokens, inp_lengths, raw_styles)
-        rev_gold_log_probs = model_D(inp_tokens, inp_lengths, rev_styles)
+        raw_gold_log_probs = model_D(inp_tokens, inp_lengths, raw_styles_)
+        rev_gold_log_probs = model_D(inp_tokens, inp_lengths, rev_styles_)
         gold_log_probs = torch.cat((raw_gold_log_probs, rev_gold_log_probs), 0)
         raw_gold_labels = torch.ones_like(raw_styles)
         rev_gold_labels = torch.zeros_like(rev_styles)
         gold_labels = torch.cat((raw_gold_labels, rev_gold_labels), 0)
 
         
-        raw_gen_log_probs = model_D(raw_gen_soft_tokens, raw_gen_lengths, raw_styles)
-        rev_gen_log_probs = model_D(rev_gen_soft_tokens, rev_gen_lengths, rev_styles)
+        raw_gen_log_probs = model_D(raw_gen_soft_tokens, raw_gen_lengths, raw_styles_)
+        rev_gen_log_probs = model_D(rev_gen_soft_tokens, rev_gen_lengths, raw_styles_)
         gen_log_probs = torch.cat((raw_gen_log_probs, rev_gen_log_probs), 0)
         raw_gen_labels = torch.ones_like(raw_styles)
         rev_gen_labels = torch.zeros_like(rev_styles)
@@ -141,6 +146,10 @@ def f_step(config, vocab, model_F, model_D, optimizer_F, batch, temperature, dro
     batch_size = inp_tokens.size(0)
     token_mask = (inp_tokens != pad_idx).float()
 
+########################################################################
+    raw_styles_ = F.one_hot(raw_styles, num_classes=config.num_styles).float()
+    rev_styles_ = F.one_hot(rev_styles, num_classes=config.num_styles).float()
+
     optimizer_F.zero_grad()
 
     # self reconstruction loss
@@ -157,7 +166,7 @@ def f_step(config, vocab, model_F, model_D, optimizer_F, batch, temperature, dro
         noise_inp_tokens, 
         inp_tokens, 
         noise_inp_lengths,
-        raw_styles,
+        raw_styles_,
         generate=False,
         differentiable_decode=False,
         temperature=temperature,
@@ -180,7 +189,7 @@ def f_step(config, vocab, model_F, model_D, optimizer_F, batch, temperature, dro
         inp_tokens,
         None,
         inp_lengths,
-        rev_styles,
+        rev_styles_,
         generate=True,
         differentiable_decode=True,
         temperature=temperature,
@@ -193,7 +202,7 @@ def f_step(config, vocab, model_F, model_D, optimizer_F, batch, temperature, dro
         gen_soft_tokens,
         inp_tokens,
         gen_lengths,
-        raw_styles,
+        raw_styles_,
         generate=False,
         differentiable_decode=False,
         temperature=temperature,
@@ -205,7 +214,7 @@ def f_step(config, vocab, model_F, model_D, optimizer_F, batch, temperature, dro
 
     # style consistency loss
 
-    adv_log_porbs = model_D(gen_soft_tokens, gen_lengths, rev_styles)
+    adv_log_porbs = model_D(gen_soft_tokens, gen_lengths, rev_styles_)
     if config.discriminator_method == 'Multi':
         adv_labels = rev_styles + 1
     else:
@@ -342,13 +351,15 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
             inp_lengths = get_lengths(inp_tokens, eos_idx)
             raw_styles = torch.full_like(inp_tokens[:, 0], raw_style)
             rev_styles = 1 - raw_styles
+            raw_styles_ = F.one_hot(raw_styles, num_classes=config.num_styles).float()
+            rev_styles_ = F.one_hot(rev_styles, num_classes=config.num_styles).float()
         
             with torch.no_grad():
                 raw_log_probs = model_F(
                     inp_tokens,
                     None,
                     inp_lengths,
-                    raw_styles,
+                    raw_styles_,
                     generate=True,
                     differentiable_decode=False,
                     temperature=temperature,
@@ -359,7 +370,7 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
                     inp_tokens, 
                     None,
                     inp_lengths,
-                    rev_styles,
+                    rev_styles_,
                     generate=True,
                     differentiable_decode=False,
                     temperature=temperature,
