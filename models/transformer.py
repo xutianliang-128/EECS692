@@ -89,7 +89,20 @@ class StyleTransformer(nn.Module):
             
             
         return log_probs
-    
+
+class StyleEmbed(nn.Module):
+    def __init__(self, num_styles, d_model):
+        super(StyleEmbed, self).__init__()
+        self.layers = nn.ModuleList([nn.Linear(num_styles, d_model),
+                                     nn.Linear(d_model, d_model),
+                                     nn.Linear(d_model, d_model)])
+
+    def forward(self, x):
+        for layer in self.layers:
+            x = F.leaky_relu(layer(x))
+
+        return x
+
 class Discriminator(nn.Module):
     def __init__(self, config, vocab):
         super(Discriminator, self).__init__()
