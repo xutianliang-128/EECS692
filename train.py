@@ -258,7 +258,7 @@ def conbine_step(config, vocab, model_F, model_D, optimizer_F, optimizer_D, batc
         noise_inp_tokens,
         None,
         noise_inp_lengths,
-        raw_gold_log_probs.detach(),
+        raw_gold_log_probs.clone().detach(),
         generate=True,
         differentiable_decode=True,
         temperature=temperature,
@@ -279,7 +279,7 @@ def conbine_step(config, vocab, model_F, model_D, optimizer_F, optimizer_D, batc
     optimizer_F.zero_grad()
     slf_rec_loss.backward()
     optimizer_F.step()
-    model_D.train()
+    #model_D.train()
 
     optimizer_D.zero_grad()
     loss.backward()
