@@ -20,7 +20,7 @@ class Config():
     d_model = 256
     h = 4
     num_styles = 28 # Should be 3?
-    num_classes = 3 if discriminator_method == 'Multi' else 2
+    num_classes = num_styles + 1 if discriminator_method == 'Multi' else 28
     num_layers = 4
     batch_size = 64
     lr_F = 0.0001
@@ -64,7 +64,7 @@ def load_dataset(config, train_pos='train.pos', train_neg='train.neg',
     
     # Does it even make sense for us to maintain a pos/neg split?
     # Using sentiment_dict could be non-deterministic for some texts.
-    dataset_fn = lambda name: data.TabularDataset( # do we want to use the same train/text split as GoEmotions?
+    dataset_fn = lambda name: data.TabularDataset( # do we want to use the same train/test split as GoEmotions?
         path=root + name,
         format='tsv',
         fields=[('text', TEXT)]
