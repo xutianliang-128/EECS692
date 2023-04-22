@@ -10,6 +10,8 @@ from einops import rearrange, repeat
 from evaluator import Evaluator
 from utils import tensor2text, calc_ppl, idx2onehot, add_noise, word_drop
 
+from random import randrange # for picking a different target style
+
 def get_lengths(tokens, eos_idx):
     lengths = torch.cumsum(tokens == eos_idx, 1)
     lengths = (lengths == 0).long().sum(-1)
@@ -17,25 +19,9 @@ def get_lengths(tokens, eos_idx):
     return lengths
 
 def batch_preprocess(batch, pad_idx, eos_idx, reverse=False):
-    batch_pos, batch_neg = batch
-    diff = batch_pos.size(1) - batch_neg.size(1)
-    if diff < 0:
-        pad = torch.full_like(batch_neg[:, :-diff], pad_idx)
-        batch_pos = torch.cat((batch_pos, pad), 1)
-    elif diff > 0:
-        pad = torch.full_like(batch_pos[:, :diff], pad_idx)
-        batch_neg = torch.cat((batch_neg, pad), 1)
-
-    pos_styles = torch.ones_like(batch_pos[:, 0])
-    neg_styles = torch.zeros_like(batch_neg[:, 0])
-
-    if reverse:
-        batch_pos, batch_neg = batch_neg, batch_pos
-        pos_styles, neg_styles = neg_styles, pos_styles
-        
-    tokens = torch.cat((batch_pos, batch_neg), 0)
+    tokens = batch.text
     lengths = get_lengths(tokens, eos_idx)
-    styles = torch.cat((pos_styles, neg_styles), 0)
+    styles = batch.style
 
     return tokens, lengths, styles
         
@@ -138,8 +124,19 @@ def f_step(config, vocab, model_F, model_D, optimizer_F, batch, temperature, dro
     loss_fn = nn.NLLLoss(reduction='none')
 
     inp_tokens, inp_lengths, raw_styles = batch_preprocess(batch, pad_idx, eos_idx)
-    rev_styles = 1 - raw_styles
+    #print("raw styles: ", raw_styles)
+    rev_styles = []
+    for raw_style in raw_styles:
+        rand_style = randrange(29)
+        while rand_style == raw_style : rand_style = randrange(29)
+        rev_styles.append(rand_style)
+    cuda_device = torch.device("cuda:0" if torch.cuda.is_available else "cpu")
+    #print(cuda_device)
+    rev_styles = torch.as_tensor(rev_styles, device=cuda_device)
+    #print("rev styles: ", rev_styles)
+    assert(not (raw_styles == rev_styles).any())
     batch_size = inp_tokens.size(0)
+    #print(batch_size)
     token_mask = (inp_tokens != pad_idx).float()
 
     optimizer_F.zero_grad()
@@ -388,6 +385,14 @@ def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
     os.makedirs(config.save_folder)
     os.makedirs(config.save_folder + '/ckpts')
     print('Save Path:', config.save_folder)
+
+    """ lengths = []
+    for i, batch in enumerate(train_iters):
+        if i < 100000 : lengths.append(batch.text.size(1))
+        else : break
+    print(np.amax(lengths))
+    input() """
+    # NOTE: max length appears to be 486 tokens
 
     print('Model F pretraining......')
     for i, batch in enumerate(train_iters):

@@ -4,7 +4,6 @@ from torch import nn
 import torch.nn.functional as F
 from utils import idx2onehot
 
-
 class StyleTransformer(nn.Module):
     def __init__(self, config, vocab):
         super(StyleTransformer, self).__init__()
@@ -33,6 +32,8 @@ class StyleTransformer(nn.Module):
                 generate=False, differentiable_decode=False, temperature=1.0):
         batch_size = inp_tokens.size(0)
         max_enc_len = inp_tokens.size(1)
+        #print("inp_tokens size: ", inp_tokens.size(0), inp_tokens.size(1))
+        #print("max len: ", self.max_length)
 
         assert max_enc_len <= self.max_length
 

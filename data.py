@@ -5,9 +5,11 @@ from torchtext import data
 
 from utils import tensor2text
 
+import spacy
+
 import torch
 class Config():
-    data_path = './full_dataset/'
+    data_path = './goemotions-data/'
     log_dir = 'runs/exp'
     save_path = './save'
     pretrained_embed_path = './embedding/'
@@ -19,8 +21,8 @@ class Config():
     embed_size = 256
     d_model = 256
     h = 4
-    num_styles = 28 # Should be 3?
-    num_classes = num_styles + 1 if discriminator_method == 'Multi' else 28
+    num_styles = 29 # Should be 3?
+    num_classes = num_styles + 1 if discriminator_method == 'Multi' else 29
     num_layers = 4
     batch_size = 64
     lr_F = 0.0001
@@ -46,35 +48,42 @@ class Config():
     inp_drop_prob = 0
 
 class DatasetIterator(object):
-    def __init__(self, pos_iter, neg_iter):
-        self.pos_iter = pos_iter
-        self.neg_iter = neg_iter
+    def __init__(self, iter):
+        self.iter = iter
 
     def __iter__(self):
-        for batch_pos, batch_neg in zip(iter(self.pos_iter), iter(self.neg_iter)):
-            if batch_pos.text.size(0) == batch_neg.text.size(0):
-                yield batch_pos.text, batch_neg.text
+        #return iter(self.iter)
+        #for batch_pos in iter(self.iter):
+        #    print(batch_pos.text)
+        for _ in self.iter:
+            yield _
 
-def load_dataset(config, train_pos='train.pos', train_neg='train.neg',
-                 dev_pos='dev.pos', dev_neg='dev.neg',
-                 test_pos='test.pos', test_neg='test.neg'):
+def isolate_class(classes : str):
+    return int(classes.split(',')[0])
+
+def load_dataset(config, train="train.tsv",
+                 dev='dev.tsv',
+                 test='test.tsv'):
 
     root = config.data_path
-    TEXT = data.Field(batch_first=True, eos_token='<eos>')
+    TEXT = data.Field(batch_first=True, eos_token='<eos>', lower=True, tokenize="spacy", tokenizer_language="en_core_web_sm")
+    process_classes = data.Pipeline(convert_token=isolate_class)
+    STYLE = data.Field(sequential=False, use_vocab=False, preprocessing=process_classes, is_target=True)
+    #ID = data.Field(sequential=False, use_vocab=False)
+
     
-    # Does it even make sense for us to maintain a pos/neg split?
     # Using sentiment_dict could be non-deterministic for some texts.
     dataset_fn = lambda name: data.TabularDataset( # do we want to use the same train/test split as GoEmotions?
         path=root + name,
         format='tsv',
-        fields=[('text', TEXT)]
+        fields=[('text', TEXT), ('style', STYLE), ('id', None)]
     )
 
-    train_pos_set, train_neg_set = map(dataset_fn, [train_pos, train_neg])
-    dev_pos_set, dev_neg_set = map(dataset_fn, [dev_pos, dev_neg])
-    test_pos_set, test_neg_set = map(dataset_fn, [test_pos, test_neg])
+    train_set = dataset_fn(train)
+    dev_set = dataset_fn(dev)
+    test_set = dataset_fn(test)
 
-    TEXT.build_vocab(train_pos_set, train_neg_set, min_freq=config.min_freq)
+    TEXT.build_vocab(train_set, min_freq=config.min_freq)
 
     if config.load_pretrained_embed:
         start = time.time()
@@ -97,13 +106,13 @@ def load_dataset(config, train_pos='train.pos', train_neg='train.neg',
         device=config.device
     )
 
-    train_pos_iter, train_neg_iter = map(lambda x: dataiter_fn(x, True), [train_pos_set, train_neg_set])
-    dev_pos_iter, dev_neg_iter = map(lambda x: dataiter_fn(x, False), [dev_pos_set, dev_neg_set])
-    test_pos_iter, test_neg_iter = map(lambda x: dataiter_fn(x, False), [test_pos_set, test_neg_set])
+    train_iter = dataiter_fn(train_set, True)
+    dev_iter = dataiter_fn(dev_set, False)
+    test_iter = dataiter_fn(test_set, False)
 
-    train_iters = DatasetIterator(train_pos_iter, train_neg_iter)
-    dev_iters = DatasetIterator(dev_pos_iter, dev_neg_iter)
-    test_iters = DatasetIterator(test_pos_iter, test_neg_iter)
+    train_iters = DatasetIterator(train_iter)
+    dev_iters = DatasetIterator(dev_iter)
+    test_iters = DatasetIterator(test_iter)
     
     return train_iters, dev_iters, test_iters, vocab
 
@@ -113,7 +122,7 @@ if __name__ == '__main__':
     train_iter, _, _, vocab = load_dataset(config)
     print(len(vocab))
     for batch in train_iter:
-        text = tensor2text(vocab, batch.text)
+        text = tensor2text(vocab, batch)
         print('\n'.join(text))
         print(batch.label)
         break
