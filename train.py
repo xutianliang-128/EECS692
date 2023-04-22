@@ -11,6 +11,8 @@ from evaluator import Evaluator
 from utils import tensor2text, calc_ppl, idx2onehot, add_noise, word_drop
 
 from random import randrange # for picking a different target style
+import random
+random.seed(692)
 
 def get_lengths(tokens, eos_idx):
     lengths = torch.cumsum(tokens == eos_idx, 1)

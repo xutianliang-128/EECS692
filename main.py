@@ -4,7 +4,6 @@ from data import load_dataset
 from models import StyleTransformer, Discriminator
 from train import train, auto_eval
 
-
 class Config():
     data_path = './goemotions-data/'
     log_dir = 'runs/exp'

@@ -7,6 +7,10 @@ from utils import tensor2text
 
 import spacy
 
+from random import randrange # for picking a random style from the ground truths
+import random
+random.seed(692)
+
 import torch
 class Config():
     data_path = './goemotions-data/'
@@ -59,7 +63,9 @@ class DatasetIterator(object):
             yield _
 
 def isolate_class(classes : str):
-    return int(classes.split(',')[0])
+    styles = classes.split(',')
+    rand_style = styles[randrange(len(styles))]
+    return int(rand_style)
 
 def load_dataset(config, train="train.tsv",
                  dev='dev.tsv',
