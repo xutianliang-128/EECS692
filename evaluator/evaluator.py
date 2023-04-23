@@ -7,6 +7,10 @@ import kenlm
 import math
 
 
+from transformers import AutoTokenizer
+
+
+
 class Evaluator(object):
 
     def __init__(self):
@@ -29,6 +33,9 @@ class Evaluator(object):
             self.yelp_ref.append(fin.readlines())
         with open(yelp_ref1_file.name, 'r') as fin:
             self.yelp_ref.append(fin.readlines()) """
+
+        tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+
         self.classifier_yelp = fasttext.load_model(yelp_acc_file.name)
         self.yelp_ppl_model = kenlm.Model(yelp_ppl_file.name)
         
