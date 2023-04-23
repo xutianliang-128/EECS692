@@ -23,6 +23,10 @@ def get_lengths(tokens, eos_idx):
 def batch_preprocess(batch, pad_idx, eos_idx, reverse=False):  
     tokens = batch.text
     #print(128 - tokens.shape[1])
+    """ print(tokens)
+    print(pad_idx)
+    print(eos_idx)
+    input() """
     #tokens = torch.nn.functional.pad(tokens, (0, 128 - tokens.shape[1]), value=pad_idx)
 
     lengths = get_lengths(tokens, eos_idx)
@@ -345,14 +349,14 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
     vocab_size = len(vocab)
     eos_idx = vocab.stoi['<eos>']
 
-    def inference(data_iter, raw_style):
+    def inference(iter):
         gold_text = []
         raw_output = []
         rev_output = []
-        for batch in data_iter:
+        for batch in iter:
             inp_tokens = batch.text
             inp_lengths = get_lengths(inp_tokens, eos_idx)
-            raw_styles = torch.full_like(inp_tokens[:, 0], raw_style)
+            raw_styles = batch.style
             rev_styles = get_rev_styles(raw_styles)
         
             with torch.no_grad():
@@ -382,12 +386,8 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
             rev_output += tensor2text(vocab, rev_log_probs.argmax(-1).cpu())
 
         return gold_text, raw_output, rev_output
-
-    pos_iter = test_iters.pos_iter
-    neg_iter = test_iters.neg_iter
     
-    gold_text, raw_output, rev_output = zip(inference(neg_iter, 0), inference(pos_iter, 1))
-
+    gold_text, raw_output, rev_output = inference(test_iters)
 
     evaluator = Evaluator()
     ref_text = evaluator.yelp_ref
