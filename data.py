@@ -21,11 +21,11 @@ class Config():
     discriminator_method = 'Multi' # 'Multi' or 'Cond'
     load_pretrained_embed = False
     min_freq = 3
-    max_length = 16
+    max_length = 486
     embed_size = 256
     d_model = 256
     h = 4
-    num_styles = 29 # Should be 3?
+    num_styles = 29
     num_classes = num_styles + 1 if discriminator_method == 'Multi' else 29
     num_layers = 4
     batch_size = 64

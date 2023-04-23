@@ -27,6 +27,18 @@ def batch_preprocess(batch, pad_idx, eos_idx, reverse=False):
 
     return tokens, lengths, styles
         
+def get_rev_styles(raw_styles):
+    rev_styles = []
+    for raw_style in raw_styles:
+        rand_style = randrange(29)
+        while rand_style == raw_style : rand_style = randrange(29)
+        rev_styles.append(rand_style)
+    cuda_device = torch.device("cuda:0" if torch.cuda.is_available else "cpu")
+    #print(cuda_device)
+    rev_styles = torch.as_tensor(rev_styles, device=cuda_device)
+    #print("rev styles: ", rev_styles)
+    assert(not (raw_styles == rev_styles).any())
+    return rev_styles        
 
 def d_step(config, vocab, model_F, model_D, optimizer_D, batch, temperature):
     model_F.eval()
@@ -36,7 +48,7 @@ def d_step(config, vocab, model_F, model_D, optimizer_D, batch, temperature):
     loss_fn = nn.NLLLoss(reduction='none')
 
     inp_tokens, inp_lengths, raw_styles = batch_preprocess(batch, pad_idx, eos_idx)
-    rev_styles = 1 - raw_styles
+    rev_styles = get_rev_styles(raw_styles)
     batch_size = inp_tokens.size(0)
 
     with torch.no_grad():
@@ -72,6 +84,8 @@ def d_step(config, vocab, model_F, model_D, optimizer_D, batch, temperature):
     if config.discriminator_method == 'Multi':
         gold_log_probs = model_D(inp_tokens, inp_lengths)
         gold_labels = raw_styles + 1
+        print(gold_labels)
+        input()
 
         raw_gen_log_probs = model_D(raw_gen_soft_tokens, raw_gen_lengths)
         rev_gen_log_probs = model_D(rev_gen_soft_tokens, rev_gen_lengths)
@@ -98,9 +112,6 @@ def d_step(config, vocab, model_F, model_D, optimizer_D, batch, temperature):
     
     adv_log_probs = torch.cat((gold_log_probs, gen_log_probs), 0)
     adv_labels = torch.cat((gold_labels, gen_labels), 0)
-    print(adv_log_probs)
-    print("************")
-    print(adv_labels)
     adv_loss = loss_fn(adv_log_probs, adv_labels)
     assert len(adv_loss.size()) == 1
     adv_loss = adv_loss.sum() / batch_size
@@ -126,25 +137,15 @@ def f_step(config, vocab, model_F, model_D, optimizer_F, batch, temperature, dro
     loss_fn = nn.NLLLoss(reduction='none')
 
     inp_tokens, inp_lengths, raw_styles = batch_preprocess(batch, pad_idx, eos_idx)
-    #print("raw styles: ", raw_styles)
-    rev_styles = []
-    for raw_style in raw_styles:
-        rand_style = randrange(29)
-        while rand_style == raw_style : rand_style = randrange(29)
-        rev_styles.append(rand_style)
-    cuda_device = torch.device("cuda:0" if torch.cuda.is_available else "cpu")
-    #print(cuda_device)
-    rev_styles = torch.as_tensor(rev_styles, device=cuda_device)
-    #print("rev styles: ", rev_styles)
-    assert(not (raw_styles == rev_styles).any())
+    rev_styles = get_rev_styles(raw_styles) # 1 - raw_styles
     batch_size = inp_tokens.size(0)
-    #print(batch_size)
     token_mask = (inp_tokens != pad_idx).float()
 
     optimizer_F.zero_grad()
 
     # self reconstruction loss
 
+    # Randomly hide words
     noise_inp_tokens = word_drop(
         inp_tokens,
         inp_lengths, 
@@ -153,10 +154,7 @@ def f_step(config, vocab, model_F, model_D, optimizer_F, batch, temperature, dro
     )
     noise_inp_lengths = get_lengths(noise_inp_tokens, eos_idx)
 
-#########################################
-    raw_styles = F.one_hot(raw_styles, num_classes=config.num_styles).float()
-    rev_styles = F.one_hot(rev_styles, num_classes=config.num_styles).float()
-
+    # Try to reconstruct the original sentence from the sentence with random words hidden
     slf_log_probs = model_F(
         noise_inp_tokens, 
         inp_tokens, 
@@ -180,6 +178,7 @@ def f_step(config, vocab, model_F, model_D, optimizer_F, batch, temperature, dro
         model_D.train()
         return slf_rec_loss.item(), 0, 0
     
+    # Generate a sentence with a new style
     gen_log_probs = model_F(
         inp_tokens,
         None,
@@ -193,6 +192,7 @@ def f_step(config, vocab, model_F, model_D, optimizer_F, batch, temperature, dro
     gen_soft_tokens = gen_log_probs.exp()
     gen_lengths = get_lengths(gen_soft_tokens.argmax(-1), eos_idx)
 
+    # Give the sentence with the new style back with the original style to try to get the original sentence
     cyc_log_probs = model_F(
         gen_soft_tokens,
         inp_tokens,
@@ -209,12 +209,14 @@ def f_step(config, vocab, model_F, model_D, optimizer_F, batch, temperature, dro
 
     # style consistency loss
 
-    adv_log_porbs = model_D(gen_soft_tokens, gen_lengths, rev_styles)
+    # L_style loss for the discriminator
+    adv_log_probs = model_D(gen_soft_tokens, gen_lengths, rev_styles)
     if config.discriminator_method == 'Multi':
         adv_labels = rev_styles + 1
+        # NOTE : class 0 is the class that the discriminator uses to identify a sentence as being from the generator
     else:
         adv_labels = torch.ones_like(rev_styles)
-    adv_loss = loss_fn(adv_log_porbs, adv_labels)
+    adv_loss = loss_fn(adv_log_probs, adv_labels)
     adv_loss = adv_loss.sum() / batch_size
     adv_loss *= config.adv_factor
         
@@ -229,144 +231,6 @@ def f_step(config, vocab, model_F, model_D, optimizer_F, batch, temperature, dro
 
     return slf_rec_loss.item(), cyc_rec_loss.item(), adv_loss.item()
 
-
-def conbine_step(config, vocab, model_F, model_D, optimizer_F, optimizer_D, batch, temperature, drop_decay):
-    pad_idx = vocab.stoi['<pad>']
-    eos_idx = vocab.stoi['<eos>']
-    vocab_size = len(vocab)
-    loss_fn = nn.NLLLoss(reduction='none')
-
-    inp_tokens, inp_lengths, raw_styles = batch_preprocess(batch, pad_idx, eos_idx)
-    rev_styles = 1 - raw_styles
-    batch_size = inp_tokens.size(0)
-    token_mask = (inp_tokens != pad_idx).float()
-    noise_inp_tokens = word_drop(
-        inp_tokens,
-        inp_lengths,
-        config.inp_drop_prob * drop_decay,
-        vocab
-    )
-    noise_inp_lengths = get_lengths(noise_inp_tokens, eos_idx)
-
-    raw_gold_log_probs = model_D(inp_tokens, inp_lengths)
-
-    raw_gen_log_probs = model_F(
-        noise_inp_tokens,
-        None,
-        noise_inp_lengths,
-        raw_gold_log_probs.detach(),
-        generate=True,
-        differentiable_decode=True,
-        temperature=temperature,
-    )
-
-    raw_gen_soft_tokens = raw_gen_log_probs.exp().detach()
-    raw_gen_lengths = get_lengths(raw_gen_soft_tokens.argmax(-1), eos_idx)
-
-    raw_gen_dis_probs = model_D(raw_gen_soft_tokens.clone().detach(), raw_gen_lengths)
-    divergence = dual_contrastive_loss(raw_gold_log_probs, raw_gen_dis_probs)
-
-    loss = divergence.sum() / batch_size
-
-    slf_rec_loss = loss_fn(raw_gen_log_probs.transpose(1, 2), inp_tokens) * token_mask
-    slf_rec_loss = slf_rec_loss.sum() / batch_size
-    slf_rec_loss *= config.slf_factor
-
-    optimizer_F.zero_grad()
-    slf_rec_loss.backward()
-    optimizer_F.step()
-    model_D.train()
-
-    optimizer_D.zero_grad()
-    loss.backward()
-    clip_grad_norm_(model_D.parameters(), 5)
-    optimizer_D.step()
-
-    return slf_rec_loss.item(), loss.item(), 0
-
-####################################################################
-
-
-def dual_contrastive_loss(real_logits, fake_logits):
-    device = real_logits.device
-    real_logits, fake_logits = map(lambda t: rearrange(t, '... -> (...)'), (real_logits, fake_logits))
-
-    def loss_half(t1, t2):
-        t1 = rearrange(t1, 'i -> i ()')
-        t2 = repeat(t2, 'j -> i j', i=t1.shape[0])
-        t = torch.cat((t1, t2), dim=-1)
-        return F.cross_entropy(t, torch.zeros(t1.shape[0], device=device, dtype=torch.long))
-
-    return loss_half(real_logits, fake_logits) + loss_half(-fake_logits, -real_logits)
-
-def d_logistic_loss(real_pred, fake_pred):
-    real_loss = F.softplus(-real_pred)
-    fake_loss = F.softplus(fake_pred)
-
-    return real_loss.mean() + fake_loss.mean()
-
-
-def d_step_new(config, vocab, model_F, model_D, optimizer_D, batch, temperature, true_label=False):
-    model_F.eval()
-    pad_idx = vocab.stoi['<pad>']
-    eos_idx = vocab.stoi['<eos>']
-    vocab_size = len(vocab)
-    loss_fn = nn.NLLLoss(reduction='none')
-
-    inp_tokens, inp_lengths, raw_styles = batch_preprocess(batch, pad_idx, eos_idx)
-    rev_styles = 1 - raw_styles
-    batch_size = inp_tokens.size(0)
-
-    raw_gold_log_probs = model_D(inp_tokens, inp_lengths)
-
-    if true_label:
-        #raw_styles = F.one_hot(raw_styles, num_classes=config.num_styles).float()
-        divergence = loss_fn(raw_gold_log_probs, raw_styles)
-
-        loss = divergence.sum() / batch_size
-        # loss = divergence
-
-        optimizer_D.zero_grad()
-        loss.backward()
-        clip_grad_norm_(model_D.parameters(), 5)
-        optimizer_D.step()
-
-        model_F.train()
-        return loss.item()
-
-
-    with torch.no_grad():
-        raw_gen_log_probs = model_F(
-            inp_tokens,
-            None,
-            inp_lengths,
-            raw_gold_log_probs,
-            generate=True,
-            differentiable_decode=True,
-            temperature=temperature,
-        )
-
-    raw_gen_soft_tokens = raw_gen_log_probs.exp()
-    raw_gen_lengths = get_lengths(raw_gen_soft_tokens.argmax(-1), eos_idx)
-
-
-    raw_gen_log_probs = model_D(raw_gen_soft_tokens.clone().detach(), raw_gen_lengths)
-    divergence = dual_contrastive_loss(raw_gold_log_probs, raw_gen_log_probs)
-
-    loss = divergence.sum() / batch_size
-    #loss = divergence
-
-    optimizer_D.zero_grad()
-    loss.backward()
-    clip_grad_norm_(model_D.parameters(), 5)
-    optimizer_D.step()
-
-    model_F.train()
-
-    return loss.item()
-####################################################################
-
-
 def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
     optimizer_F = optim.Adam(model_F.parameters(), lr=config.lr_F, weight_decay=config.L2)
     optimizer_D = optim.Adam(model_D.parameters(), lr=config.lr_D, weight_decay=config.L2)
@@ -375,8 +239,6 @@ def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
     his_f_slf_loss = []
     his_f_cyc_loss = []
     his_f_adv_loss = []
-
-    pre_dis_loss = []
     
     #writer = SummaryWriter(config.log_dir)
     global_step = 0
@@ -388,15 +250,8 @@ def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
     os.makedirs(config.save_folder + '/ckpts')
     print('Save Path:', config.save_folder)
 
-    """ lengths = []
-    for i, batch in enumerate(train_iters):
-        if i < 100000 : lengths.append(batch.text.size(1))
-        else : break
-    print(np.amax(lengths))
-    input() """
-    # NOTE: max length appears to be 486 tokens
-
     print('Model F pretraining......')
+    # Pretrain the generator
     for i, batch in enumerate(train_iters):
         if i >= config.F_pretrain_iter:
             break
@@ -405,26 +260,13 @@ def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
         his_f_cyc_loss.append(cyc_loss)
 
         if (i + 1) % 10 == 0:
+            # Compute loss functions
             avrg_f_slf_loss = np.mean(his_f_slf_loss)
             avrg_f_cyc_loss = np.mean(his_f_cyc_loss)
             his_f_slf_loss = []
             his_f_cyc_loss = []
             print('[iter: {}] slf_loss:{:.4f}, rec_loss:{:.4f}'.format(i + 1, avrg_f_slf_loss, avrg_f_cyc_loss))
 
-    print('Classifier pretraining......')
-    for i, batch in enumerate(train_iters):
-        if i >= config.F_pretrain_iter:
-            break
-        temperature = 1
-        d_adv_loss = d_step_new(
-            config, vocab, model_F, model_D, optimizer_D, batch, temperature, true_label=True
-        )
-        pre_dis_loss.append(d_adv_loss)
-
-        if (i + 1) % 10 == 0:
-            avrg_pre_dis_loss = np.mean(pre_dis_loss)
-            pre_dis_loss = []
-            print('[iter: {}] avrg_pre_dis_loss:{:.4f}'.format(i + 1, avrg_pre_dis_loss))
     
     print('Training start......')
 
@@ -440,101 +282,61 @@ def train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters):
                 temperature = (1 - k) * t_a + k * t_b
                 return temperature
     batch_iters = iter(train_iters)
-    ###########################################
     while True:
         drop_decay = calc_temperature(config.drop_rate_config, global_step)
         temperature = calc_temperature(config.temperature_config, global_step)
         batch = next(batch_iters)
-
-
-        f_slf_loss, d_loss, f_adv_loss = conbine_step(
-            config, vocab, model_F, model_D, optimizer_F, optimizer_D, batch, temperature, drop_decay)
-        his_f_slf_loss.append(f_slf_loss)
-        his_f_cyc_loss.append(d_loss)
-        his_f_adv_loss.append(f_adv_loss)
-
+        
+        # After pretraining the generator, train the generator and discriminator in tandem
+        for _ in range(config.iter_D):
+            batch = next(batch_iters)
+            d_adv_loss = d_step(
+                config, vocab, model_F, model_D, optimizer_D, batch, temperature
+            )
+            his_d_adv_loss.append(d_adv_loss)
+            
+        for _ in range(config.iter_F):
+            batch = next(batch_iters)
+            # Train the generator using the cycle loss function f_step
+            f_slf_loss, f_cyc_loss, f_adv_loss = f_step(
+                config, vocab, model_F, model_D, optimizer_F, batch, temperature, drop_decay
+            )
+            his_f_slf_loss.append(f_slf_loss)
+            his_f_cyc_loss.append(f_cyc_loss)
+            his_f_adv_loss.append(f_adv_loss)
+            
+        
         global_step += 1
-
+        #writer.add_scalar('rec_loss', rec_loss.item(), global_step)
+        #writer.add_scalar('loss', loss.item(), global_step)
+            
+            
         if global_step % config.log_steps == 0:
+            avrg_d_adv_loss = np.mean(his_d_adv_loss)
             avrg_f_slf_loss = np.mean(his_f_slf_loss)
             avrg_f_cyc_loss = np.mean(his_f_cyc_loss)
             avrg_f_adv_loss = np.mean(his_f_adv_loss)
-            log_str = '[iter {}] ' + \
-                      'f_slf_loss: {:.4f}  f_d_loss: {:.4f}  ' + \
+            log_str = '[iter {}] d_adv_loss: {:.4f}  ' + \
+                      'f_slf_loss: {:.4f}  f_cyc_loss: {:.4f}  ' + \
                       'f_adv_loss: {:.4f}  temp: {:.4f}  drop: {:.4f}'
             print(log_str.format(
-                global_step,
+                global_step, avrg_d_adv_loss,
                 avrg_f_slf_loss, avrg_f_cyc_loss, avrg_f_adv_loss,
                 temperature, config.inp_drop_prob * drop_decay
             ))
-
+                
         if global_step % config.eval_steps == 0:
+            his_d_adv_loss = []
             his_f_slf_loss = []
             his_f_cyc_loss = []
             his_f_adv_loss = []
-
-            # save model
+            
+            #save model
             torch.save(model_F.state_dict(), config.save_folder + '/ckpts/' + str(global_step) + '_F.pth')
             torch.save(model_D.state_dict(), config.save_folder + '/ckpts/' + str(global_step) + '_D.pth')
             auto_eval(config, vocab, model_F, test_iters, global_step, temperature)
-            # for path, sub_writer in writer.all_writers.items():
+            #for path, sub_writer in writer.all_writers.items():
             #    sub_writer.flush()
-
-    ###########################################
-
-    # while True:
-    #     drop_decay = calc_temperature(config.drop_rate_config, global_step)
-    #     temperature = calc_temperature(config.temperature_config, global_step)
-    #     batch = next(batch_iters)
-    #
-    #     for _ in range(config.iter_F):
-    #         batch = next(batch_iters)
-    #         f_slf_loss, f_cyc_loss, f_adv_loss = f_step(
-    #             config, vocab, model_F, model_D, optimizer_F, batch, temperature, drop_decay, False
-    #         )
-    #         his_f_slf_loss.append(f_slf_loss)
-    #         his_f_cyc_loss.append(f_cyc_loss)
-    #         his_f_adv_loss.append(f_adv_loss)
-    #
-    #     for _ in range(config.iter_D):
-    #         batch = next(batch_iters)
-    #         d_adv_loss = d_step_new(
-    #             config, vocab, model_F, model_D, optimizer_D, batch, temperature
-    #         )
-    #         his_d_adv_loss.append(d_adv_loss)
-    #
-    #
-    #     global_step += 1
-    #     #writer.add_scalar('rec_loss', rec_loss.item(), global_step)
-    #     #writer.add_scalar('loss', loss.item(), global_step)
-    #
-    #
-    #     if global_step % config.log_steps == 0:
-    #         avrg_d_adv_loss = np.mean(his_d_adv_loss)
-    #         avrg_f_slf_loss = np.mean(his_f_slf_loss)
-    #         avrg_f_cyc_loss = np.mean(his_f_cyc_loss)
-    #         avrg_f_adv_loss = np.mean(his_f_adv_loss)
-    #         log_str = '[iter {}] d_adv_loss: {:.4f}  ' + \
-    #                   'f_slf_loss: {:.4f}  f_cyc_loss: {:.4f}  ' + \
-    #                   'f_adv_loss: {:.4f}  temp: {:.4f}  drop: {:.4f}'
-    #         print(log_str.format(
-    #             global_step, avrg_d_adv_loss,
-    #             avrg_f_slf_loss, avrg_f_cyc_loss, avrg_f_adv_loss,
-    #             temperature, config.inp_drop_prob * drop_decay
-    #         ))
-    #
-    #     if global_step % config.eval_steps == 0:
-    #         his_d_adv_loss = []
-    #         his_f_slf_loss = []
-    #         his_f_cyc_loss = []
-    #         his_f_adv_loss = []
-    #
-    #         #save model
-    #         torch.save(model_F.state_dict(), config.save_folder + '/ckpts/' + str(global_step) + '_F.pth')
-    #         torch.save(model_D.state_dict(), config.save_folder + '/ckpts/' + str(global_step) + '_D.pth')
-    #         auto_eval(config, vocab, model_F, test_iters, global_step, temperature)
-    #         #for path, sub_writer in writer.all_writers.items():
-    #         #    sub_writer.flush()
 
 def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
     model_F.eval()
@@ -549,10 +351,7 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
             inp_tokens = batch.text
             inp_lengths = get_lengths(inp_tokens, eos_idx)
             raw_styles = torch.full_like(inp_tokens[:, 0], raw_style)
-            rev_styles = 1 - raw_styles
-
-            raw_styles = F.one_hot(raw_styles, num_classes=config.num_styles).float()
-            rev_styles = F.one_hot(rev_styles, num_classes=config.num_styles).float()
+            rev_styles = get_rev_styles(raw_styles)
         
             with torch.no_grad():
                 raw_log_probs = model_F(
@@ -592,12 +391,12 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
     ref_text = evaluator.yelp_ref
 
     
-    # acc_neg = evaluator.yelp_acc_0(rev_output[0])
-    # acc_pos = evaluator.yelp_acc_1(rev_output[1])
-    # bleu_neg = evaluator.yelp_ref_bleu_0(rev_output[0])
-    # bleu_pos = evaluator.yelp_ref_bleu_1(rev_output[1])
-    # ppl_neg = evaluator.yelp_ppl(rev_output[0])
-    # ppl_pos = evaluator.yelp_ppl(rev_output[1])
+    acc_neg = evaluator.yelp_acc_0(rev_output[0])
+    acc_pos = evaluator.yelp_acc_1(rev_output[1])
+    bleu_neg = evaluator.yelp_ref_bleu_0(rev_output[0])
+    bleu_pos = evaluator.yelp_ref_bleu_1(rev_output[1])
+    ppl_neg = evaluator.yelp_ppl(rev_output[0])
+    ppl_pos = evaluator.yelp_ppl(rev_output[1])
 
     for k in range(5):
         idx = np.random.randint(len(rev_output[0]))
@@ -620,45 +419,45 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
 
     print('*' * 20, '********', '*' * 20)
 
-    # print(('[auto_eval] acc_pos: {:.4f} acc_neg: {:.4f} ' + \
-    #       'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
-    #       'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
-    #           acc_pos, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
-    # ))
+    print(('[auto_eval] acc_pos: {:.4f} acc_neg: {:.4f} ' + \
+          'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
+          'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
+              acc_pos, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
+    ))
 
     
     # save output
-    # save_file = config.save_folder + '/' + str(global_step) + '.txt'
-    # eval_log_file = config.save_folder + '/eval_log.txt'
-    # with open(eval_log_file, 'a') as fl:
-    #     print(('iter{:5d}:  acc_pos: {:.4f} acc_neg: {:.4f} ' + \
-    #            'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
-    #            'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
-    #         global_step, acc_pos, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
-    #     ), file=fl)
-    # with open(save_file, 'w') as fw:
-    #     print(('[auto_eval] acc_pos: {:.4f} acc_neg: {:.4f} ' + \
-    #            'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
-    #            'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
-    #         acc_pos, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
-    #     ), file=fw)
-    #
-    #     for idx in range(len(rev_output[0])):
-    #         print('*' * 20, 'neg sample', '*' * 20, file=fw)
-    #         print('[gold]', gold_text[0][idx], file=fw)
-    #         print('[raw ]', raw_output[0][idx], file=fw)
-    #         print('[rev ]', rev_output[0][idx], file=fw)
-    #         print('[ref ]', ref_text[0][idx], file=fw)
-    #
-    #     print('*' * 20, '********', '*' * 20, file=fw)
-    #
-    #     for idx in range(len(rev_output[1])):
-    #         print('*' * 20, 'pos sample', '*' * 20, file=fw)
-    #         print('[gold]', gold_text[1][idx], file=fw)
-    #         print('[raw ]', raw_output[1][idx], file=fw)
-    #         print('[rev ]', rev_output[1][idx], file=fw)
-    #         print('[ref ]', ref_text[1][idx], file=fw)
-    #
-    #     print('*' * 20, '********', '*' * 20, file=fw)
+    save_file = config.save_folder + '/' + str(global_step) + '.txt'
+    eval_log_file = config.save_folder + '/eval_log.txt'
+    with open(eval_log_file, 'a') as fl:
+        print(('iter{:5d}:  acc_pos: {:.4f} acc_neg: {:.4f} ' + \
+               'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
+               'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
+            global_step, acc_pos, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
+        ), file=fl)
+    with open(save_file, 'w') as fw:
+        print(('[auto_eval] acc_pos: {:.4f} acc_neg: {:.4f} ' + \
+               'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
+               'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
+            acc_pos, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
+        ), file=fw)
+
+        for idx in range(len(rev_output[0])):
+            print('*' * 20, 'neg sample', '*' * 20, file=fw)
+            print('[gold]', gold_text[0][idx], file=fw)
+            print('[raw ]', raw_output[0][idx], file=fw)
+            print('[rev ]', rev_output[0][idx], file=fw)
+            print('[ref ]', ref_text[0][idx], file=fw)
+
+        print('*' * 20, '********', '*' * 20, file=fw)
+
+        for idx in range(len(rev_output[1])):
+            print('*' * 20, 'pos sample', '*' * 20, file=fw)
+            print('[gold]', gold_text[1][idx], file=fw)
+            print('[raw ]', raw_output[1][idx], file=fw)
+            print('[rev ]', rev_output[1][idx], file=fw)
+            print('[ref ]', ref_text[1][idx], file=fw)
+
+        print('*' * 20, '********', '*' * 20, file=fw)
         
     model_F.train()

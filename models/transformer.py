@@ -4,6 +4,7 @@ from torch import nn
 import torch.nn.functional as F
 from utils import idx2onehot
 
+
 class StyleTransformer(nn.Module):
     def __init__(self, config, vocab):
         super(StyleTransformer, self).__init__()
@@ -16,8 +17,7 @@ class StyleTransformer(nn.Module):
         self.max_length = config.max_length
         self.eos_idx = vocab.stoi['<eos>']
         self.pad_idx = vocab.stoi['<pad>']
-        self.num_styles = num_styles
-        self.style_embed = StyleEmbed(num_styles, d_model)
+        self.style_embed = Embedding(num_styles, d_model)
         self.embed = EmbeddingLayer(
             vocab, d_model, max_length,
             self.pad_idx,
@@ -25,15 +25,14 @@ class StyleTransformer(nn.Module):
             load_pretrained_embed,
         )
         self.sos_token = nn.Parameter(torch.randn(d_model))
+        # Feed the sentence in to the encoder 
         self.encoder = Encoder(num_layers, d_model, len(vocab), h, dropout)
         self.decoder = Decoder(num_layers, d_model, len(vocab), h, dropout)
         
     def forward(self, inp_tokens, gold_tokens, inp_lengths, style,
-                generate=False, differentiable_decode=False, temperature=1.0):
+                generate=False, differentiable_decode=False, temperature=1.0, override_style=None):
         batch_size = inp_tokens.size(0)
         max_enc_len = inp_tokens.size(1)
-        #print("inp_tokens size: ", inp_tokens.size(0), inp_tokens.size(1))
-        #print("max len: ", self.max_length)
 
         assert max_enc_len <= self.max_length
 
@@ -47,8 +46,7 @@ class StyleTransformer(nn.Module):
         tgt_mask = torch.ones((self.max_length, self.max_length)).to(src_mask.device)
         tgt_mask = (tgt_mask.tril() == 0).view(1, 1, self.max_length, self.max_length)
 
-
-        style_emb = self.style_embed(style).unsqueeze(1)
+        style_emb = self.style_embed(style).unsqueeze(1) if override_style is None else override_style.unsqueeze(1)
 
         enc_input = torch.cat((style_emb, self.embed(inp_tokens, pos_idx[:, :max_enc_len])), 1)
         memory = self.encoder(enc_input, src_mask)
@@ -92,21 +90,7 @@ class StyleTransformer(nn.Module):
             
             
         return log_probs
-
-class StyleEmbed(nn.Module):
-    def __init__(self, num_styles, d_model):
-        super(StyleEmbed, self).__init__()
-        self.layers = nn.ModuleList([nn.Linear(num_styles, d_model),
-                                     nn.Linear(d_model, d_model),
-                                     nn.Linear(d_model, d_model)])
-
-    def forward(self, x):
-        for layer in self.layers:
-            x = F.leaky_relu(layer(x))
-
-        return x
-
-
+    
 class Discriminator(nn.Module):
     def __init__(self, config, vocab):
         super(Discriminator, self).__init__()
