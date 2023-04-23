@@ -20,8 +20,11 @@ def get_lengths(tokens, eos_idx):
     lengths = lengths + 1 # +1 for <eos> token
     return lengths
 
-def batch_preprocess(batch, pad_idx, eos_idx, reverse=False):
+def batch_preprocess(batch, pad_idx, eos_idx, reverse=False):  
     tokens = batch.text
+    #print(128 - tokens.shape[1])
+    #tokens = torch.nn.functional.pad(tokens, (0, 128 - tokens.shape[1]), value=pad_idx)
+
     lengths = get_lengths(tokens, eos_idx)
     styles = batch.style
 

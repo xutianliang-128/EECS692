@@ -21,7 +21,7 @@ class Config():
     discriminator_method = 'Multi' # 'Multi' or 'Cond'
     load_pretrained_embed = False
     min_freq = 3
-    max_length = 486
+    max_length = 128 # 486
     embed_size = 256
     d_model = 256
     h = 4
@@ -72,7 +72,7 @@ def load_dataset(config, train="train.tsv",
                  test='test.tsv'):
 
     root = config.data_path
-    TEXT = data.Field(batch_first=True, eos_token='<eos>', lower=True, tokenize="spacy", tokenizer_language="en_core_web_sm")
+    TEXT = data.Field(batch_first=True, eos_token='<eos>', lower=True, tokenize="spacy", tokenizer_language="en_core_web_sm", fix_length=128)
     process_classes = data.Pipeline(convert_token=isolate_class)
     STYLE = data.Field(sequential=False, use_vocab=False, preprocessing=process_classes, is_target=True)
     #ID = data.Field(sequential=False, use_vocab=False)
