@@ -84,8 +84,7 @@ def d_step(config, vocab, model_F, model_D, optimizer_D, batch, temperature):
     if config.discriminator_method == 'Multi':
         gold_log_probs = model_D(inp_tokens, inp_lengths)
         gold_labels = raw_styles + 1
-        print(gold_labels)
-        input()
+        # NOTE : class 0 is the class that the discriminator uses to identify a sentence as being from the generator
 
         raw_gen_log_probs = model_D(raw_gen_soft_tokens, raw_gen_lengths)
         rev_gen_log_probs = model_D(rev_gen_soft_tokens, rev_gen_lengths)
@@ -137,7 +136,7 @@ def f_step(config, vocab, model_F, model_D, optimizer_F, batch, temperature, dro
     loss_fn = nn.NLLLoss(reduction='none')
 
     inp_tokens, inp_lengths, raw_styles = batch_preprocess(batch, pad_idx, eos_idx)
-    rev_styles = get_rev_styles(raw_styles) # 1 - raw_styles
+    rev_styles = get_rev_styles(raw_styles)
     batch_size = inp_tokens.size(0)
     token_mask = (inp_tokens != pad_idx).float()
 
