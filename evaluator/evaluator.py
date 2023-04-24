@@ -5,6 +5,14 @@ import fasttext
 import pkg_resources
 import kenlm
 import math
+import torch
+import numpy as np
+
+from transformers import (AutoTokenizer)
+from transformers.modeling_outputs import SequenceClassifierOutput
+from evaluator.huggingface_clf import DistilBertForMultilabelSequenceClassification
+
+
 
 
 class Evaluator(object):
@@ -16,29 +24,33 @@ class Evaluator(object):
         yelp_ppl_path = 'ppl_yelp.binary'
         #yelp_ref0_path = 'yelp.refs.0'
         #yelp_ref1_path = 'yelp.refs.1'
+        self.tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
 
-        
-        yelp_acc_file = pkg_resources.resource_stream(resource_package, yelp_acc_path)
+        #yelp_acc_file = pkg_resources.resource_stream(resource_package, yelp_acc_path)
         yelp_ppl_file = pkg_resources.resource_stream(resource_package, yelp_ppl_path)
         #yelp_ref0_file = pkg_resources.resource_stream(resource_package, yelp_ref0_path)
         #yelp_ref1_file = pkg_resources.resource_stream(resource_package, yelp_ref1_path)
-
         
         #self.yelp_ref = []
         """ with open(yelp_ref0_file.name, 'r') as fin:
             self.yelp_ref.append(fin.readlines())
         with open(yelp_ref1_file.name, 'r') as fin:
             self.yelp_ref.append(fin.readlines()) """
-        self.classifier_yelp = fasttext.load_model(yelp_acc_file.name)
+        #self.classifier_yelp = fasttext.load_model(yelp_acc_file.name)
+        self.classifier_yelp = DistilBertForMultilabelSequenceClassification.from_pretrained(
+            "bhadresh-savani/distilbert-base-uncased-go-emotion")
         self.yelp_ppl_model = kenlm.Model(yelp_ppl_file.name)
         
     def yelp_style_check(self, text_transfered, style_origin):
         text_transfered = ' '.join(word_tokenize(text_transfered.lower().strip()))
         if text_transfered == '':
             return False
-        label = self.classifier_yelp.predict([text_transfered])
-        style_transfered = label[0][0] == '__label__positive'
-        return (style_transfered != style_origin)
+        inputs = self.tokenizer(text_transfered, return_tensors="pt")
+        logits = self.classifier_yelp(**inputs).logits
+
+        label = logits.argmax().item()
+
+        return (label != style_origin)
 
     def yelp_acc_b(self, texts, styles_origin):
         assert len(texts) == len(styles_origin), 'Size of inputs does not match!'
