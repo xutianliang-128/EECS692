@@ -403,7 +403,6 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
     # ppl_neg = evaluator.yelp_ppl(rev_output[0])
     # ppl_pos = evaluator.yelp_ppl(rev_output[1])
 
-    print(rev_output, len(rev_styles_list))
     acc = evaluator.yelp_acc_b(rev_output, rev_styles_list)
 
     '''
