@@ -1,3 +1,4 @@
 
 evaluator/ppl_yelp.binary
 __pycache__/
+*.pyc
