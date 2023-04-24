@@ -12,6 +12,9 @@ from transformers import (AutoTokenizer)
 from transformers.modeling_outputs import SequenceClassifierOutput
 from huggingface_clf import DistilBertForMultilabelSequenceClassification
 
+
+
+
 class Evaluator(object):
 
     def __init__(self):
@@ -27,7 +30,6 @@ class Evaluator(object):
         yelp_ppl_file = pkg_resources.resource_stream(resource_package, yelp_ppl_path)
         #yelp_ref0_file = pkg_resources.resource_stream(resource_package, yelp_ref0_path)
         #yelp_ref1_file = pkg_resources.resource_stream(resource_package, yelp_ref1_path)
-
         
         self.yelp_ref = []
         """ with open(yelp_ref0_file.name, 'r') as fin:
@@ -48,8 +50,8 @@ class Evaluator(object):
 
         predicted_class_id = logits.argmax().item()
         label = self.classifier_yelp.predict([text_transfered])
-        style_transfered = label[0][0] == '__label__positive'
-        return (style_transfered != style_origin)
+
+        return (label != style_origin)
 
     def yelp_acc_b(self, texts, styles_origin):
         assert len(texts) == len(styles_origin), 'Size of inputs does not match!'

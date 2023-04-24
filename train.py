@@ -353,6 +353,7 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
         gold_text = []
         raw_output = []
         rev_output = []
+        rev_styles_list = []
         for batch in iter:
             inp_tokens = batch.text
             inp_lengths = get_lengths(inp_tokens, eos_idx)
@@ -384,21 +385,33 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
             gold_text += tensor2text(vocab, inp_tokens.cpu())
             raw_output += tensor2text(vocab, raw_log_probs.argmax(-1).cpu())
             rev_output += tensor2text(vocab, rev_log_probs.argmax(-1).cpu())
+            rev_styles_list += rev_styles
 
-        return gold_text, raw_output, rev_output
+        return gold_text, raw_output, rev_output, rev_styles_list
     
-    gold_text, raw_output, rev_output = inference(test_iters)
+    gold_text, raw_output, rev_output, rev_styles_list = inference(test_iters)
 
     evaluator = Evaluator()
     ref_text = evaluator.yelp_ref
 
     
-    acc_neg = evaluator.yelp_acc_0(rev_output[0])
-    acc_pos = evaluator.yelp_acc_1(rev_output[1])
-    bleu_neg = evaluator.yelp_ref_bleu_0(rev_output[0])
-    bleu_pos = evaluator.yelp_ref_bleu_1(rev_output[1])
-    ppl_neg = evaluator.yelp_ppl(rev_output[0])
-    ppl_pos = evaluator.yelp_ppl(rev_output[1])
+    # acc_neg = evaluator.yelp_acc_0(rev_output[0])
+    # acc_pos = evaluator.yelp_acc_1(rev_output[1])
+    # bleu_neg = evaluator.yelp_ref_bleu_0(rev_output[0])
+    # bleu_pos = evaluator.yelp_ref_bleu_1(rev_output[1])
+    # ppl_neg = evaluator.yelp_ppl(rev_output[0])
+    # ppl_pos = evaluator.yelp_ppl(rev_output[1])
+
+    acc = evaluator.yelp_acc_b(rev_output[0], rev_styles_list)
+
+    '''
+    place holder
+    '''
+    acc_pos = 0
+    bleu_neg = 0
+    bleu_pos = 0
+    ppl_neg = 0
+    ppl_pos = 0
 
     for k in range(5):
         idx = np.random.randint(len(rev_output[0]))
@@ -406,7 +419,7 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
         print('[gold]', gold_text[0][idx])
         print('[raw ]', raw_output[0][idx])
         print('[rev ]', rev_output[0][idx])
-        print('[ref ]', ref_text[0][idx])
+        #print('[ref ]', ref_text[0][idx])
 
     print('*' * 20, '********', '*' * 20)
     
@@ -417,14 +430,19 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
         print('[gold]', gold_text[1][idx])
         print('[raw ]', raw_output[1][idx])
         print('[rev ]', rev_output[1][idx])
-        print('[ref ]', ref_text[1][idx])
+        #print('[ref ]', ref_text[1][idx])
 
     print('*' * 20, '********', '*' * 20)
 
-    print(('[auto_eval] acc_pos: {:.4f} acc_neg: {:.4f} ' + \
-          'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
-          'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
-              acc_pos, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
+    # print(('[auto_eval] acc_pos: {:.4f} acc_neg: {:.4f} ' + \
+    #       'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
+    #       'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
+    #           acc_pos, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
+    # ))
+    print(('[auto_eval] acc: {:.4f} acc_neg: {:.4f} ' + \
+           'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
+           'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
+        acc, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
     ))
 
     
