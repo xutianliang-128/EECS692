@@ -34,14 +34,13 @@ def batch_preprocess(batch, pad_idx, eos_idx, reverse=False):
 
     return tokens, lengths, styles
         
-def get_rev_styles(raw_styles):
+def get_rev_styles(config, raw_styles):
     rev_styles = []
     for raw_style in raw_styles:
-        rand_style = randrange(28)
-        while rand_style == raw_style : rand_style = randrange(28)
+        rand_style = randrange(config.num_styles)
+        while rand_style == raw_style : rand_style = randrange(config.num_styles)
         rev_styles.append(rand_style)
-    cuda_device = torch.device("cuda:0" if torch.cuda.is_available else "cpu")
-    #cuda_device = torch.device("cpu")
+    cuda_device = config.device
     #print(cuda_device)
     rev_styles = torch.as_tensor(rev_styles, device=cuda_device)
     #print("rev styles: ", rev_styles)
@@ -56,7 +55,7 @@ def d_step(config, vocab, model_F, model_D, optimizer_D, batch, temperature):
     loss_fn = nn.NLLLoss(reduction='none')
 
     inp_tokens, inp_lengths, raw_styles = batch_preprocess(batch, pad_idx, eos_idx)
-    rev_styles = get_rev_styles(raw_styles)
+    rev_styles = get_rev_styles(config, raw_styles)
     batch_size = inp_tokens.size(0)
 
     with torch.no_grad():
@@ -82,12 +81,9 @@ def d_step(config, vocab, model_F, model_D, optimizer_D, batch, temperature):
     
     raw_gen_soft_tokens = raw_gen_log_probs.exp()
     raw_gen_lengths = get_lengths(raw_gen_soft_tokens.argmax(-1), eos_idx)
-
     
     rev_gen_soft_tokens = rev_gen_log_probs.exp()
     rev_gen_lengths = get_lengths(rev_gen_soft_tokens.argmax(-1), eos_idx)
-
-        
 
     if config.discriminator_method == 'Multi':
         gold_log_probs = model_D(inp_tokens, inp_lengths)
@@ -144,7 +140,7 @@ def f_step(config, vocab, model_F, model_D, optimizer_F, batch, temperature, dro
     loss_fn = nn.NLLLoss(reduction='none')
 
     inp_tokens, inp_lengths, raw_styles = batch_preprocess(batch, pad_idx, eos_idx)
-    rev_styles = get_rev_styles(raw_styles)
+    rev_styles = get_rev_styles(config, raw_styles)
     batch_size = inp_tokens.size(0)
     token_mask = (inp_tokens != pad_idx).float()
 
@@ -359,7 +355,7 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
             inp_tokens = batch.text
             inp_lengths = get_lengths(inp_tokens, eos_idx)
             raw_styles = batch.style
-            rev_styles = get_rev_styles(raw_styles)
+            rev_styles = get_rev_styles(config, raw_styles)
         
             with torch.no_grad():
                 raw_log_probs = model_F(
@@ -393,26 +389,13 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
     gold_text, raw_output, rev_output, rev_styles_list = inference(test_iters)
 
     evaluator = Evaluator()
-    ref_text = evaluator.yelp_ref
-
+    #ref_text = evaluator.yelp_ref
     
-    # acc_neg = evaluator.yelp_acc_0(rev_output[0])
-    # acc_pos = evaluator.yelp_acc_1(rev_output[1])
-    # bleu_neg = evaluator.yelp_ref_bleu_0(rev_output[0])
-    # bleu_pos = evaluator.yelp_ref_bleu_1(rev_output[1])
-    # ppl_neg = evaluator.yelp_ppl(rev_output[0])
-    # ppl_pos = evaluator.yelp_ppl(rev_output[1])
-
     acc = evaluator.yelp_acc_b(rev_output, rev_styles_list)
-
-    '''
-    place holder
-    '''
-    acc_neg = 0
-    bleu_neg = 0
-    bleu_pos = 0
-    ppl_neg = 0
-    ppl_pos = 0
+    #bleu_neg = evaluator.yelp_ref_bleu_0(rev_output[0])
+    #bleu_pos = evaluator.yelp_ref_bleu_1(rev_output[1])
+    ppl_neg = evaluator.yelp_ppl(rev_output[0])
+    ppl_pos = evaluator.yelp_ppl(rev_output[1])
 
     for k in range(5):
         idx = np.random.randint(len(rev_output))
@@ -435,15 +418,12 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
 
     print('*' * 20, '********', '*' * 20)
 
-    # print(('[auto_eval] acc_pos: {:.4f} acc_neg: {:.4f} ' + \
-    #       'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
-    #       'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
-    #           acc_pos, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
-    # ))
-    print(('[auto_eval] acc: {:.4f} acc_neg: {:.4f} ' + \
-           'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
-           'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
-        acc, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
+    print(('[auto_eval] acc_pos: {:.4f} acc_neg: {:.4f} ' + \
+          #'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
+          'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
+              acc_pos, acc_neg,
+              #bleu_pos, bleu_neg,
+              ppl_pos, ppl_neg,
     ))
 
     
@@ -451,26 +431,20 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
     save_file = config.save_folder + '/' + str(global_step) + '.txt'
     eval_log_file = config.save_folder + '/eval_log.txt'
     with open(eval_log_file, 'a') as fl:
-        # print(('iter{:5d}:  acc_pos: {:.4f} acc_neg: {:.4f} ' + \
-        #        'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
-        #        'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
-        #     global_step, acc_pos, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
-        # ), file=fl)
-        print(('iter{:5d}:  acc: {:.4f} acc_neg: {:.4f} ' + \
-               'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
+        print(('iter{:5d}:  acc_pos: {:.4f} acc_neg: {:.4f} ' + \
+               #'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
                'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
-            global_step, acc, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
+            global_step, acc_pos, acc_neg,
+            #bleu_pos, bleu_neg,
+            ppl_pos, ppl_neg,
         ), file=fl)
     with open(save_file, 'w') as fw:
-        # print(('[auto_eval] acc_pos: {:.4f} acc_neg: {:.4f} ' + \
-        #        'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
-        #        'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
-        #     acc_pos, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
-        # ), file=fw)
-        print(('[auto_eval] acc: {:.4f} acc_neg: {:.4f} ' + \
-               'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
+        print(('[auto_eval] acc_pos: {:.4f} acc_neg: {:.4f} ' + \
+               #'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
                'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
-            acc, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
+            acc_pos, acc_neg,
+            #bleu_pos, bleu_neg,
+            ppl_pos, ppl_neg,
         ), file=fw)
 
         for idx in range(len(rev_output)):
