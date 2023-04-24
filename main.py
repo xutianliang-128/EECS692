@@ -53,11 +53,11 @@ def main():
     model_D = Discriminator(config, vocab).to(config.device)
     print(config.discriminator_method)
     ###################
-    print("Test custom eval.")
-    out = custom_eval(config, vocab, model_F, "I love You", input_style=torch.rand((1,256)), temperature=1)
-    print(out)
+    # print("Test custom eval.")
+    # out = custom_eval(config, vocab, model_F, "I love You", input_style=torch.rand((1,256)), temperature=1)
+    # print(out)
     ##################
-    #train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters)
+    train(config, vocab, model_F, model_D, train_iters, dev_iters, test_iters)
     
 
 if __name__ == '__main__':
