@@ -10,7 +10,7 @@ import numpy as np
 
 from transformers import (AutoTokenizer)
 from transformers.modeling_outputs import SequenceClassifierOutput
-from huggingface_clf import DistilBertForMultilabelSequenceClassification
+from evaluator.huggingface_clf import DistilBertForMultilabelSequenceClassification
 
 
 
@@ -48,8 +48,7 @@ class Evaluator(object):
         inputs = self.tokenizer(text_transfered, return_tensors="pt")
         logits = self.classifier_yelp(**inputs).logits
 
-        predicted_class_id = logits.argmax().item()
-        label = self.classifier_yelp.predict([text_transfered])
+        label = logits.argmax().item()
 
         return (label != style_origin)
 

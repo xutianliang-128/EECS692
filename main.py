@@ -10,6 +10,7 @@ class Config():
     save_path = './save'
     pretrained_embed_path = './embedding/'
     device = torch.device('cuda' if True and torch.cuda.is_available() else 'cpu')
+    #device = torch.device('cpu')
     discriminator_method = 'Multi' # 'Multi' or 'Cond'
     load_pretrained_embed = False
     min_freq = 3
@@ -20,15 +21,15 @@ class Config():
     num_styles = 28
     num_classes = num_styles + 1 if discriminator_method == 'Multi' else 2
     num_layers = 4
-    batch_size = 64
+    batch_size = 4
     lr_F = 0.0001
     lr_D = 0.0001
     L2 = 0
     iter_D = 10
     iter_F = 5
-    F_pretrain_iter = 500
-    log_steps = 5
-    eval_steps = 25
+    F_pretrain_iter = 2
+    log_steps = 1
+    eval_steps = 1
     learned_pos_embed = True
     dropout = 0
     drop_rate_config = [(1, 0)]

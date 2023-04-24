@@ -7,8 +7,8 @@ from transformers import (AutoTokenizer, AutoModelForSequenceClassification,
                           TrainingArguments, Trainer)
 from transformers.modeling_outputs import SequenceClassifierOutput
 
-model_ckpt = "distilbert-base-uncased"
-tokenizer = AutoTokenizer.from_pretrained(model_ckpt)
+# model_ckpt = "distilbert-base-uncased"
+# tokenizer = AutoTokenizer.from_pretrained(model_ckpt)
 
 class DistilBertForMultilabelSequenceClassification(DistilBertForSequenceClassification):
     def __init__(self, config):
@@ -54,13 +54,13 @@ class DistilBertForMultilabelSequenceClassification(DistilBertForSequenceClassif
             attentions=outputs.attentions)
 
 
-model = DistilBertForMultilabelSequenceClassification.from_pretrained("bhadresh-savani/distilbert-base-uncased-go-emotion")
-
-text = "I hate you"
-
-inputs = tokenizer(text, return_tensors="pt")
-
-logits = model(**inputs).logits
-
-predicted_class_id = logits.argmax().item()
-print(model.config.id2label[predicted_class_id])
+# model = DistilBertForMultilabelSequenceClassification.from_pretrained("bhadresh-savani/distilbert-base-uncased-go-emotion")
+#
+# text = "I hate you"
+#
+# inputs = tokenizer(text, return_tensors="pt")
+#
+# logits = model(**inputs).logits
+#
+# predicted_class_id = logits.argmax().item()
+# print(model.config.id2label[predicted_class_id])
