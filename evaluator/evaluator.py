@@ -41,7 +41,7 @@ class Evaluator(object):
             "bhadresh-savani/distilbert-base-uncased-go-emotion")
         self.yelp_ppl_model = kenlm.Model(yelp_ppl_file.name)
         
-    def yelp_style_check(self, text_transfered, style_origin):
+    def acc_sentence(self, text_transfered, style_origin):
         text_transfered = ' '.join(word_tokenize(text_transfered.lower().strip()))
         if text_transfered == '':
             return False
@@ -50,23 +50,15 @@ class Evaluator(object):
 
         label = logits.argmax().item()
 
-        return (label != style_origin)
+        return label == style_origin
 
-    def yelp_acc_b(self, texts, styles_origin):
+    def acc_set(self, texts, styles_origin):
         assert len(texts) == len(styles_origin), 'Size of inputs does not match!'
         count = 0
         for text, style in zip(texts, styles_origin):
-            if self.yelp_style_check(text, style):
+            if self.acc_sentence(text, style):
                 count += 1
         return count / len(texts)
-
-    def yelp_acc_0(self, texts):
-        styles_origin = [0] * len(texts)
-        return self.yelp_acc_b(texts, styles_origin)
-
-    def yelp_acc_1(self, texts):
-        styles_origin = [1] * len(texts)
-        return self.yelp_acc_b(texts, styles_origin)
 
     """     def nltk_bleu(self, texts_origin, text_transfered):
         texts_origin = [word_tokenize(text_origin.lower().strip()) for text_origin in texts_origin]
@@ -114,6 +106,7 @@ class Evaluator(object):
         length = 0
         for i, line in enumerate(texts_transfered):
             words += [word for word in line.split()]
+            #if len(line.split()) == 0 : length += 1
             length += len(line.split())
             score = self.yelp_ppl_model.score(line)
             sum += score

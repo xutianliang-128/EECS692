@@ -391,11 +391,10 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
     evaluator = Evaluator()
     #ref_text = evaluator.yelp_ref
     
-    acc = evaluator.yelp_acc_b(rev_output, rev_styles_list)
+    acc = evaluator.acc_set(rev_output, rev_styles_list)
     #bleu_neg = evaluator.yelp_ref_bleu_0(rev_output[0])
     #bleu_pos = evaluator.yelp_ref_bleu_1(rev_output[1])
-    ppl_neg = evaluator.yelp_ppl(rev_output[0])
-    ppl_pos = evaluator.yelp_ppl(rev_output[1])
+    ppl = evaluator.yelp_ppl(rev_output)
 
     for k in range(5):
         idx = np.random.randint(len(rev_output))
@@ -403,7 +402,7 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
         print('[gold]', gold_text[idx])
         print('[raw ]', raw_output[idx])
         print('[rev ]', rev_output[idx])
-        #print('[ref ]', ref_text[0][idx])
+        #print('[ref ]', ref_text[idx])
 
     print('*' * 20, '********', '*' * 20)
     
@@ -414,16 +413,16 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
         print('[gold]', gold_text[idx])
         print('[raw ]', raw_output[idx])
         print('[rev ]', rev_output[idx])
-        #print('[ref ]', ref_text[1][idx])
+        #print('[ref ]', ref_text[idx])
 
     print('*' * 20, '********', '*' * 20)
 
-    print(('[auto_eval] acc_pos: {:.4f} acc_neg: {:.4f} ' + \
+    print(('[auto_eval] acc: {:.4f} ' + \
           #'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
-          'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
-              acc_pos, acc_neg,
+          'ppl: {:.4f}\n').format(
+              acc,
               #bleu_pos, bleu_neg,
-              ppl_pos, ppl_neg,
+              ppl,
     ))
 
     
@@ -431,20 +430,20 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
     save_file = config.save_folder + '/' + str(global_step) + '.txt'
     eval_log_file = config.save_folder + '/eval_log.txt'
     with open(eval_log_file, 'a') as fl:
-        print(('iter{:5d}:  acc_pos: {:.4f} acc_neg: {:.4f} ' + \
+        print(('iter{:5d}:  acc {:.4f} ' + \
                #'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
-               'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
-            global_step, acc_pos, acc_neg,
+               'ppl: {:.4f}\n').format(
+            global_step, acc,
             #bleu_pos, bleu_neg,
-            ppl_pos, ppl_neg,
+            ppl,
         ), file=fl)
     with open(save_file, 'w') as fw:
-        print(('[auto_eval] acc_pos: {:.4f} acc_neg: {:.4f} ' + \
+        print(('[auto_eval] acc: {:.4f} ' + \
                #'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
-               'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
-            acc_pos, acc_neg,
+               'ppl: {:.4f}\n').format(
+            acc,
             #bleu_pos, bleu_neg,
-            ppl_pos, ppl_neg,
+            ppl,
         ), file=fw)
 
         for idx in range(len(rev_output)):
@@ -452,7 +451,7 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
             print('[gold]', gold_text[idx], file=fw)
             print('[raw ]', raw_output[idx], file=fw)
             print('[rev ]', rev_output[idx], file=fw)
-            #print('[ref ]', ref_text[0][idx], file=fw)
+            #print('[ref ]', ref_text[idx], file=fw)
 
         print('*' * 20, '********', '*' * 20, file=fw)
 
@@ -461,7 +460,7 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
             print('[gold]', gold_text[idx], file=fw)
             print('[raw ]', raw_output[idx], file=fw)
             print('[rev ]', rev_output[idx], file=fw)
-            #print('[ref ]', ref_text[1][idx], file=fw)
+            #print('[ref ]', ref_text[idx], file=fw)
 
         print('*' * 20, '********', '*' * 20, file=fw)
         

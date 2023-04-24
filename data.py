@@ -18,9 +18,6 @@ class DatasetIterator(object):
         self.iter = iter
 
     def __iter__(self):
-        #return iter(self.iter)
-        #for batch_pos in iter(self.iter):
-        #    print(batch_pos.text)
         for _ in self.iter:
             yield _
 
@@ -37,8 +34,6 @@ def load_dataset(config, train="train.tsv",
     TEXT = data.Field(batch_first=True, eos_token='<eos>', lower=True, tokenize="spacy", tokenizer_language="en_core_web_sm", fix_length=config.max_length)
     process_classes = data.Pipeline(convert_token=isolate_class)
     STYLE = data.Field(sequential=False, use_vocab=False, preprocessing=process_classes, is_target=True)
-    #ID = data.Field(sequential=False, use_vocab=False)
-
     
     # Using sentiment_dict could be non-deterministic for some texts.
     dataset_fn = lambda name: data.TabularDataset( # do we want to use the same train/test split as GoEmotions?
