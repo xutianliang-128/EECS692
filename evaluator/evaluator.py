@@ -16,7 +16,7 @@ class Evaluator(object):
         yelp_ppl_path = 'ppl_yelp.binary'
         #yelp_ref0_path = 'yelp.refs.0'
         #yelp_ref1_path = 'yelp.refs.1'
-
+        self.tokenizer = None
         
         yelp_acc_file = pkg_resources.resource_stream(resource_package, yelp_acc_path)
         yelp_ppl_file = pkg_resources.resource_stream(resource_package, yelp_ppl_path)
