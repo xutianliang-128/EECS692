@@ -34,11 +34,11 @@ def batch_preprocess(batch, pad_idx, eos_idx, reverse=False):
 
     return tokens, lengths, styles
         
-def get_rev_styles(raw_styles):
+def get_rev_styles(config, raw_styles):
     rev_styles = []
     for raw_style in raw_styles:
-        rand_style = randrange(29)
-        while rand_style == raw_style : rand_style = randrange(29)
+        rand_style = randrange(config.num_styles)
+        while rand_style == raw_style : rand_style = randrange(config.num_styles)
         rev_styles.append(rand_style)
     cuda_device = torch.device('cpu') # torch.device("cuda:0" if torch.cuda.is_available else "cpu")
     #print(cuda_device)
@@ -55,7 +55,7 @@ def d_step(config, vocab, model_F, model_D, optimizer_D, batch, temperature):
     loss_fn = nn.NLLLoss(reduction='none')
 
     inp_tokens, inp_lengths, raw_styles = batch_preprocess(batch, pad_idx, eos_idx)
-    rev_styles = get_rev_styles(raw_styles)
+    rev_styles = get_rev_styles(config, raw_styles)
     batch_size = inp_tokens.size(0)
 
     with torch.no_grad():
@@ -81,12 +81,9 @@ def d_step(config, vocab, model_F, model_D, optimizer_D, batch, temperature):
     
     raw_gen_soft_tokens = raw_gen_log_probs.exp()
     raw_gen_lengths = get_lengths(raw_gen_soft_tokens.argmax(-1), eos_idx)
-
     
     rev_gen_soft_tokens = rev_gen_log_probs.exp()
     rev_gen_lengths = get_lengths(rev_gen_soft_tokens.argmax(-1), eos_idx)
-
-        
 
     if config.discriminator_method == 'Multi':
         gold_log_probs = model_D(inp_tokens, inp_lengths)
@@ -143,7 +140,7 @@ def f_step(config, vocab, model_F, model_D, optimizer_F, batch, temperature, dro
     loss_fn = nn.NLLLoss(reduction='none')
 
     inp_tokens, inp_lengths, raw_styles = batch_preprocess(batch, pad_idx, eos_idx)
-    rev_styles = get_rev_styles(raw_styles)
+    rev_styles = get_rev_styles(config, raw_styles)
     batch_size = inp_tokens.size(0)
     token_mask = (inp_tokens != pad_idx).float()
 
@@ -357,7 +354,7 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
             inp_tokens = batch.text
             inp_lengths = get_lengths(inp_tokens, eos_idx)
             raw_styles = batch.style
-            rev_styles = get_rev_styles(raw_styles)
+            rev_styles = get_rev_styles(config, raw_styles)
         
             with torch.no_grad():
                 raw_log_probs = model_F(
