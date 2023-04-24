@@ -41,7 +41,7 @@ def get_rev_styles(raw_styles):
         rand_style = randrange(29)
         while rand_style == raw_style : rand_style = randrange(29)
         rev_styles.append(rand_style)
-    cuda_device = torch.device("cuda:0" if torch.cuda.is_available else "cpu")
+    cuda_device = torch.device('cpu') # torch.device("cuda:0" if torch.cuda.is_available else "cpu")
     #print(cuda_device)
     rev_styles = torch.as_tensor(rev_styles, device=cuda_device)
     #print("rev styles: ", rev_styles)
@@ -391,13 +391,13 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
     gold_text, raw_output, rev_output = inference(test_iters)
 
     evaluator = Evaluator()
-    ref_text = evaluator.yelp_ref
+    #ref_text = evaluator.yelp_ref
 
     
     acc_neg = evaluator.yelp_acc_0(rev_output[0])
     acc_pos = evaluator.yelp_acc_1(rev_output[1])
-    bleu_neg = evaluator.yelp_ref_bleu_0(rev_output[0])
-    bleu_pos = evaluator.yelp_ref_bleu_1(rev_output[1])
+    #bleu_neg = evaluator.yelp_ref_bleu_0(rev_output[0])
+    #bleu_pos = evaluator.yelp_ref_bleu_1(rev_output[1])
     ppl_neg = evaluator.yelp_ppl(rev_output[0])
     ppl_pos = evaluator.yelp_ppl(rev_output[1])
 
@@ -407,7 +407,7 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
         print('[gold]', gold_text[0][idx])
         print('[raw ]', raw_output[0][idx])
         print('[rev ]', rev_output[0][idx])
-        print('[ref ]', ref_text[0][idx])
+        #print('[ref ]', ref_text[0][idx])
 
     print('*' * 20, '********', '*' * 20)
     
@@ -418,14 +418,16 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
         print('[gold]', gold_text[1][idx])
         print('[raw ]', raw_output[1][idx])
         print('[rev ]', rev_output[1][idx])
-        print('[ref ]', ref_text[1][idx])
+        #print('[ref ]', ref_text[1][idx])
 
     print('*' * 20, '********', '*' * 20)
 
     print(('[auto_eval] acc_pos: {:.4f} acc_neg: {:.4f} ' + \
-          'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
+          #'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
           'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
-              acc_pos, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
+              acc_pos, acc_neg,
+              #bleu_pos, bleu_neg,
+              ppl_pos, ppl_neg,
     ))
 
     
@@ -434,15 +436,19 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
     eval_log_file = config.save_folder + '/eval_log.txt'
     with open(eval_log_file, 'a') as fl:
         print(('iter{:5d}:  acc_pos: {:.4f} acc_neg: {:.4f} ' + \
-               'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
+               #'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
                'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
-            global_step, acc_pos, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
+            global_step, acc_pos, acc_neg,
+            #bleu_pos, bleu_neg,
+            ppl_pos, ppl_neg,
         ), file=fl)
     with open(save_file, 'w') as fw:
         print(('[auto_eval] acc_pos: {:.4f} acc_neg: {:.4f} ' + \
-               'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
+               #'bleu_pos: {:.4f} bleu_neg: {:.4f} ' + \
                'ppl_pos: {:.4f} ppl_neg: {:.4f}\n').format(
-            acc_pos, acc_neg, bleu_pos, bleu_neg, ppl_pos, ppl_neg,
+            acc_pos, acc_neg,
+            #bleu_pos, bleu_neg,
+            ppl_pos, ppl_neg,
         ), file=fw)
 
         for idx in range(len(rev_output[0])):
@@ -450,7 +456,7 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
             print('[gold]', gold_text[0][idx], file=fw)
             print('[raw ]', raw_output[0][idx], file=fw)
             print('[rev ]', rev_output[0][idx], file=fw)
-            print('[ref ]', ref_text[0][idx], file=fw)
+            #print('[ref ]', ref_text[0][idx], file=fw)
 
         print('*' * 20, '********', '*' * 20, file=fw)
 
@@ -459,7 +465,7 @@ def auto_eval(config, vocab, model_F, test_iters, global_step, temperature):
             print('[gold]', gold_text[1][idx], file=fw)
             print('[raw ]', raw_output[1][idx], file=fw)
             print('[rev ]', rev_output[1][idx], file=fw)
-            print('[ref ]', ref_text[1][idx], file=fw)
+            #print('[ref ]', ref_text[1][idx], file=fw)
 
         print('*' * 20, '********', '*' * 20, file=fw)
         

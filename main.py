@@ -9,7 +9,7 @@ class Config():
     log_dir = 'runs/exp'
     save_path = './save'
     pretrained_embed_path = './embedding/'
-    device = torch.device('cuda' if True and torch.cuda.is_available() else 'cpu')
+    device = torch.device('cpu') #torch.device('cuda' if True and torch.cuda.is_available() else 'cpu')
     discriminator_method = 'Multi' # 'Multi' or 'Cond'
     load_pretrained_embed = False
     min_freq = 3
@@ -26,7 +26,7 @@ class Config():
     L2 = 0
     iter_D = 10
     iter_F = 5
-    F_pretrain_iter = 500
+    F_pretrain_iter = 20
     log_steps = 5
     eval_steps = 25
     learned_pos_embed = True

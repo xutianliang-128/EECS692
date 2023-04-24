@@ -24,7 +24,7 @@ class Evaluator(object):
         #yelp_ref1_file = pkg_resources.resource_stream(resource_package, yelp_ref1_path)
 
         
-        self.yelp_ref = []
+        #self.yelp_ref = []
         """ with open(yelp_ref0_file.name, 'r') as fin:
             self.yelp_ref.append(fin.readlines())
         with open(yelp_ref1_file.name, 'r') as fin:
@@ -56,7 +56,7 @@ class Evaluator(object):
         styles_origin = [1] * len(texts)
         return self.yelp_acc_b(texts, styles_origin)
 
-    def nltk_bleu(self, texts_origin, text_transfered):
+    """     def nltk_bleu(self, texts_origin, text_transfered):
         texts_origin = [word_tokenize(text_origin.lower().strip()) for text_origin in texts_origin]
         text_transfered = word_tokenize(text_transfered.lower().strip())
         return sentence_bleu(texts_origin, text_transfered) * 100
@@ -92,7 +92,7 @@ class Evaluator(object):
         n = 1000
         for x, y in zip(self.yelp_ref[0] + self.yelp_ref[1], texts_neg2pos + texts_pos2neg):
             sum += self.nltk_bleu([x], y)
-        return sum / n
+        return sum / n """
 
     
     def yelp_ppl(self, texts_transfered):
