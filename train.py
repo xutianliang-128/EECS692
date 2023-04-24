@@ -40,7 +40,7 @@ def get_rev_styles(config, raw_styles):
         rand_style = randrange(config.num_styles)
         while rand_style == raw_style : rand_style = randrange(config.num_styles)
         rev_styles.append(rand_style)
-    cuda_device = torch.device('cpu') # torch.device("cuda:0" if torch.cuda.is_available else "cpu")
+    cuda_device = config.device
     #print(cuda_device)
     rev_styles = torch.as_tensor(rev_styles, device=cuda_device)
     #print("rev styles: ", rev_styles)
