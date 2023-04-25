@@ -19,12 +19,6 @@ spacy
 
 huggingface
 
-Also, run
-
-# python3 -m spacy download en_core_web_sm
-
-to install te tokenizer for the GoEmotions dataset in the Multi-class Experiment.
-
 ## Branches
 
 Different branches represent different experiment.
@@ -72,7 +66,13 @@ The most of them are listed below:
 
 You can adjust them in the Config class from the ''main.py''.
 
+Also, run
 
+```
+    python3 -m spacy download en_core_web_sm
+```
+
+to install the tokenizer for the GoEmotions dataset in the Multi-class Experiment.
 
 If you want to run the model, use the command:
 
