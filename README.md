@@ -15,6 +15,10 @@ fasttext == 0.8.3
 
 kenlm
 
+spacy
+
+huggingface
+
 ## Branches
 
 Different branches represent different experiment.
@@ -24,6 +28,7 @@ Different branches represent different experiment.
     handle_GoEmotion_data : The Multi-class Experiment
 ```
 
+Experiment 3 lives at https://github.com/leeweijie/692ui
 
 
 ## Usage
@@ -62,7 +67,13 @@ The most of them are listed below:
 
 You can adjust them in the Config class from the ''main.py''.
 
+Also, run
 
+```
+    python3 -m spacy download en_core_web_sm
+```
+
+to install the tokenizer for the GoEmotions dataset in the Multi-class Experiment.
 
 If you want to run the model, use the command:
 
