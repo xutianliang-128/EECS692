@@ -13,14 +13,14 @@ class Config():
     discriminator_method = 'Multi' # 'Multi' or 'Cond'
     load_pretrained_embed = False
     min_freq = 3
-    max_length = 128 # 486 is longest sentence in GoEmotions dataset
+    max_length = 32 # 486 is longest sentence in GoEmotions dataset
     embed_size = 256
     d_model = 256
     h = 4
     num_styles = 28
     num_classes = num_styles + 1 if discriminator_method == 'Multi' else 2
     num_layers = 4
-    batch_size = 4
+    batch_size = 32
     lr_F = 0.0001
     lr_D = 0.0001
     L2 = 0
