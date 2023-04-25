@@ -15,6 +15,16 @@ fasttext == 0.8.3
 
 kenlm
 
+spacy
+
+huggingface
+
+Also, run
+
+# python3 -m spacy download en_core_web_sm
+
+to install te tokenizer for the GoEmotions dataset in the Multi-class Experiment.
+
 ## Branches
 
 Different branches represent different experiment.
