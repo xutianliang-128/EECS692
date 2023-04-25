@@ -1,8 +1,7 @@
-# Style Transformer: Unpaired Text Style Transfer without Disentangled Latent Representation
+# EECS 692 Repository 
 
-This folder contains the code for the paper [《Style Transformer: Unpaired Text Style Transfer without Disentangled Latent Representation》](https://arxiv.org/abs/1905.05621)
-
-
+Framework refers to the paper [《Style Transformer: Unpaired Text Style Transfer without Disentangled Latent Representation》] 
+(https://arxiv.org/abs/1905.05621)
 
 ## Requirements
 
@@ -16,11 +15,20 @@ fasttext == 0.8.3
 
 kenlm
 
+## Branches
+
+Different branches represent different experiment.
+```
+    master : The Experiment 1 (StylText)
+    second_experiment : The Experiment 2
+    handle_GoEmotion_data : The Multi-class Experiment
+```
+
 
 
 ## Usage
 
-The hyperparameters for the Style Transformer can be found in ''main.py''.
+The hyperparameters for the transformer can be found in ''main.py''.
 
 The most of them are listed below:
 
